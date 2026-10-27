@@ -1,0 +1,3 @@
+# Copy to .dev.vars (gitignored) for `npm run dev`. Never commit real values.
+ARCGIS_CLIENT_ID=<client id of your ArcGIS OAuth 2.0 credentials>
+COOKIE_ENCRYPTION_KEY=<random string, e.g. output of: openssl rand -hex 32>

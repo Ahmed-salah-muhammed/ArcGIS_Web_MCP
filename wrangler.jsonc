@@ -1,0 +1,45 @@
+/**
+ * ArcGIS Web MCP - Cloudflare Workers configuration.
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ *
+ * Secrets go in `.dev.vars` (local, gitignored) and `npx wrangler deploy --secrets-file <file>` (deployed):
+ *   ARCGIS_CLIENT_ID       client id of YOUR ArcGIS OAuth 2.0 credentials (redirect: <worker>/callback)
+ *   COOKIE_ENCRYPTION_KEY  random string, e.g. `openssl rand -hex 32`
+ * A fork changes `name` and removes the KV `id` (its first deploy creates a new namespace).
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "arcgis",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-19",
+	// global_fetch_strictly_public: outbound fetch only to public hosts; also enables CIMD client metadata documents
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	// The id was written by the first `wrangler deploy` (automatic provisioning); without one, a deploy creates it
+	"kv_namespaces": [
+		{
+			"binding": "OAUTH_KV",
+			"id": "31ff170c4d504588886a6a3d3015f8b8"
+		}
+	],
+	"vars": {
+		// ArcGIS Online by default; an Enterprise portal works too, e.g. "https://gis.example.com/portal"
+		"ARCGIS_PORTAL_URL": "https://www.arcgis.com",
+		// Comma-separated extra hosts allowed to receive the user's token (e.g. federated servers on another host)
+		"ARCGIS_EXTRA_HOSTS": ""
+	},
+	"observability": {
+		"enabled": true
+	},
+	"dev": {
+		"port": 8788
+	},
+	"secrets": {
+		"required": [
+			"ARCGIS_CLIENT_ID",
+			"COOKIE_ENCRYPTION_KEY"
+		]
+	}
+}

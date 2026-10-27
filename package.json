@@ -1,0 +1,28 @@
+{
+	"name": "arcgis-web-mcp",
+	"version": "0.2.0",
+	"private": true,
+	"description": "Remote MCP server (Cloudflare Workers) for ArcGIS Online / Enterprise: each user signs in with their own ArcGIS account (OAuth 2.0 + PKCE).",
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"cf-typegen": "wrangler types",
+		"type-check": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@cloudflare/workers-oauth-provider": "^0.8.3",
+		"@modelcontextprotocol/server": "2.3.1",
+		"agents": "^0.29.0",
+		"hono": "^4.12.27",
+		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"@modelcontextprotocol/inspector": "^2.12.0",
+		"@types/node": "^26.6.5",
+		"typescript": "6.0.3",
+		"vitest": "^3.2.4",
+		"wrangler": "^4.105.0"
+	}
+}
