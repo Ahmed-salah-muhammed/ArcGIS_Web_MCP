@@ -1,14 +1,14 @@
 /**
- * Groups: search, get (members + items), create, update, delete (confirm). Verified on ArcGIS Online with a
+ * portal_groups: search, get (members + items), create, update, delete (confirm). Verified on ArcGIS Online with a
  * throwaway private group. Adding/removing other members is left out of this version: it could not be verified
  * without a second account (portal_rest reaches community/groups/<id>/addUsers if needed).
  */
-import { ArcGISError, sharingUrl } from "./arcgis";
-import { resolveGroupId } from "./content";
-import { type Ctx, iso } from "./portal";
-import { audit, requireConfirm } from "./safety";
+import { ArcGISError } from "../../arcgis";
+import type { Ctx } from "../shared/context";
+import { iso } from "../shared/format";
+import { base, resolveGroupId } from "../shared/lookup";
+import { audit, requireConfirm } from "../shared/safety";
 
-const base = (ctx: Ctx) => sharingUrl(ctx.props.portal);
 const ACCESS = new Set(["private", "org", "public"]);
 
 export function groupCard(g: any) {

@@ -1,12 +1,13 @@
 /**
- * portal_rest - raw ArcGIS REST with the signed-in user's token, for anything the curated tools do not cover.
+ * portal_rest: raw ArcGIS REST with the signed-in user's token, for anything the other tools do not cover.
  * GET sends the token in a header and cannot change anything (REST writes require POST). POST needs confirm=true
  * unless the operation is read-only (query, search, generateRenderer, ...). The token only goes to the portal and
  * its service hosts (hostAllowed).
  */
-import { ArcGISError, hostAllowed, sharingUrl } from "./arcgis";
-import { type Ctx, truncate } from "./portal";
-import { audit, requireConfirm } from "./safety";
+import { ArcGISError, hostAllowed, sharingUrl } from "../../arcgis";
+import type { Ctx } from "../shared/context";
+import { truncate } from "../shared/format";
+import { audit, requireConfirm } from "../shared/safety";
 
 export const READ_ONLY_POST = new Set(["query", "search", "generaterenderer", "queryrelatedrecords", "queryattachments",
 	"querydomains", "querytopfeatures", "identify", "find", "validatesql", "querybins", "queryanalytic", "info", "self",

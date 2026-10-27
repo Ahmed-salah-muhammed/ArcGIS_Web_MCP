@@ -1,13 +1,14 @@
 /**
- * Web maps as plain web-map JSON (addItem type "Web Map" + text, verified on ArcGIS Online), ported from the
- * ArcGIS Pro Salah MCP (portal/maps.py). Basemaps come from the user's own org: its default basemap, or a title
- * from its basemap gallery group.
+ * portal_map: web maps as plain web-map JSON (addItem type "Web Map" + text, verified on ArcGIS Online), ported
+ * from the ArcGIS Pro Salah MCP (portal/maps.py). Basemaps come from the user's own org: its default basemap, or a
+ * title from its basemap gallery group.
  */
-import { ArcGISError, hostAllowed, sharingUrl } from "./arcgis";
-import { resolveFolder } from "./content";
-import { buildRenderer } from "./layer-writes";
-import { type Ctx, itemCard, requireId } from "./portal";
-import { audit } from "./safety";
+import { ArcGISError, hostAllowed } from "../../arcgis";
+import type { Ctx } from "../shared/context";
+import { itemCard } from "../shared/format";
+import { base, requireId, resolveFolder } from "../shared/lookup";
+import { buildRenderer } from "../shared/renderer";
+import { audit } from "../shared/safety";
 
 export const BASEMAP_ALIASES: Record<string, string> = {
 	"topo-vector": "topographic", topo: "topographic", "streets-vector": "streets", streets: "streets",
@@ -19,8 +20,6 @@ const SYSTEM_FIELDS = new Set(["objectid", "fid", "globalid", "shape", "shape__a
 	"shape_length", "created_user", "created_date", "last_edited_user", "last_edited_date", "creationdate", "creator",
 	"editdate", "editor"]);
 const ID_RE = /^[0-9a-f]{32}$/i;
-
-const base = (ctx: Ctx) => sharingUrl(ctx.props.portal);
 
 export function popupFor(props: any, titleField?: string, fields?: string[]) {
 	const fieldInfos = (props.fields ?? []).map((f: any) => ({

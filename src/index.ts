@@ -10,7 +10,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler, getMcpAuthContext } from "agents/mcp/server";
 import { env } from "cloudflare:workers";
 import { type ArcGISProps, ArcGISError, refreshAccessToken } from "./arcgis";
-import { ArcGISHandler } from "./arcgis-handler";
+import { ArcGISHandler } from "./auth/handler";
 import { MCP_INSTRUCTIONS, MCP_SERVER_INFO } from "./pages";
 import { registerTools } from "./tools";
 

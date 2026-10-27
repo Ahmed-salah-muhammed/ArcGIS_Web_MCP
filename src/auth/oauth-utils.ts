@@ -2,7 +2,7 @@
 // OAuth utility functions with CSRF and state validation security fixes
 
 import type { AuthRequest, ClientInfo } from "@cloudflare/workers-oauth-provider";
-import { type Author, CREDIT_CSS, creditHtml } from "./pages";
+import { type Author, CREDIT_CSS, creditHtml } from "../pages";
 
 /**
  * OAuth 2.1 compliant error class.

@@ -2,7 +2,7 @@
  * The same rails as the ArcGIS Pro Salah MCP: irreversible, bulk, public or credit-spending writes refuse with
  * code "confirm_required" and a preview until the call is repeated with confirm=true; every write is audited.
  */
-import { type ArcGISProps, ArcGISError } from "./arcgis";
+import { type ArcGISProps, ArcGISError } from "../../arcgis";
 
 export class ConfirmRequired extends ArcGISError {
 	constructor(action: string, readonly preview: unknown, readonly hint?: string) {

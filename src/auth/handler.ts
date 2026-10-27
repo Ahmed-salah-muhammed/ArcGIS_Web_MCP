@@ -19,7 +19,7 @@ import {
 	grantUserId,
 	randomVerifier,
 	sharingUrl,
-} from "./arcgis";
+} from "../arcgis";
 import {
 	addApprovedClient,
 	bindStateToSession,
@@ -30,8 +30,8 @@ import {
 	renderApprovalDialog,
 	validateCSRFToken,
 	validateOAuthState,
-} from "./workers-oauth-utils";
-import { AUTHOR, clientDisplay, HOME_HEADERS, homePage, type Message, MESSAGE_HEADERS, messagePage } from "./pages";
+} from "./oauth-utils";
+import { AUTHOR, clientDisplay, HOME_HEADERS, homePage, type Message, MESSAGE_HEADERS, messagePage } from "../pages";
 
 type Bindings = Env & { OAUTH_PROVIDER: OAuthHelpers };
 
