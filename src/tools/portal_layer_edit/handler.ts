@@ -21,8 +21,16 @@ function chunks<T>(list: T[], size: number): T[][] {
 	return out;
 }
 
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
 export type EditArgs = {
-	action?: "edit" | "calculate" | "truncate";
+	action?: "edit" | "calculate" | "truncate" | "add_attachment" | "delete_attachments";
+	object_id?: number;
+	file_name?: string;
+	content_base64?: string;
+	content_text?: string;
+	content_type?: string;
+	attachment_ids?: number[];
 	target: string;
 	layer?: number | string;
 	adds?: unknown[];
@@ -36,6 +44,57 @@ export type EditArgs = {
 	dry_run?: boolean;
 	confirm?: boolean;
 };
+
+/** Bytes of an attachment given as base64 (any file) or as text. */
+export function attachmentBytes(args: Pick<EditArgs, "content_base64" | "content_text">): Uint8Array {
+	if (args.content_base64) {
+		let raw: string;
+		try {
+			raw = atob(args.content_base64.replace(/^data:[^,]*,/, "").replace(/\s+/g, ""));
+		} catch {
+			throw new ArcGISError("content_base64 is not valid base64.", "bad_argument");
+		}
+		return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+	}
+	if (args.content_text !== undefined) return new TextEncoder().encode(args.content_text);
+	throw new ArcGISError("content_base64 (any file) or content_text is required.", "bad_argument");
+}
+
+async function attachmentEdit(ctx: Ctx, url: string, props: any, args: EditArgs) {
+	if (!props.hasAttachments) {
+		throw new ArcGISError("This layer has no attachments (portal_layer_schema action=enable_attachments can turn them on).",
+			"no_attachments");
+	}
+	const oid = Number(args.object_id);
+	if (!Number.isInteger(oid)) throw new ArcGISError("object_id is required.", "bad_argument");
+	if (args.action === "add_attachment") {
+		if (!args.file_name) throw new ArcGISError("file_name is required, e.g. photo.jpg.", "bad_argument");
+		const bytes = attachmentBytes(args);
+		if (bytes.length > MAX_ATTACHMENT_BYTES) {
+			throw new ArcGISError(`The file is ${bytes.length} bytes; the limit here is ${MAX_ATTACHMENT_BYTES}.`, "too_large");
+		}
+		if (!ctx.upload) throw new ArcGISError("Uploads are not available in this context.", "unsupported");
+		const res = await ctx.upload(`${url}/${oid}/addAttachment`, {}, { name: args.file_name, content: bytes,
+			type: args.content_type ?? "application/octet-stream", field: "attachment" });
+		const r = res.addAttachmentResult ?? {};
+		audit(ctx.props, { tool: "portal_layer_edit", action: "add_attachment", target: url, ok: Boolean(r.success),
+			details: { object_id: oid, attachment_id: r.objectId } });
+		if (!r.success) throw new ArcGISError(`The attachment was not added: ${JSON.stringify(r.error ?? res).slice(0, 200)}`, "not_added");
+		return { layer: props.name, object_id: oid, attachment_id: r.objectId, bytes: bytes.length,
+			url: `${url}/${oid}/attachments/${r.objectId}` };
+	}
+	const ids = (args.attachment_ids ?? []).map(Number).filter(Number.isInteger);
+	if (!ids.length) throw new ArcGISError("attachment_ids is required.", "bad_argument");
+	requireConfirm(args.confirm, `Deleting ${ids.length} attachment(s) of feature ${oid} in '${props.name}'`,
+		{ layer: props.name, object_id: oid, attachment_ids: ids });
+	const res = await ctx.request(`${url}/${oid}/deleteAttachments`, { attachmentIds: ids.join(",") });
+	const results: any[] = res.deleteAttachmentResults ?? [];
+	const failed = results.filter((r) => !r.success).map((r) => r.objectId);
+	audit(ctx.props, { tool: "portal_layer_edit", action: "delete_attachments", target: url, ok: !failed.length,
+		details: { object_id: oid, attachment_ids: ids } });
+	return { layer: props.name, object_id: oid, deleted: results.filter((r) => r.success).map((r) => r.objectId),
+		failed: failed.length ? failed : null };
+}
 
 export async function edit(ctx: Ctx, args: EditArgs) {
 	const action = args.action ?? "edit";
@@ -69,7 +128,11 @@ export async function edit(ctx: Ctx, args: EditArgs) {
 		return { layer: name, rows_before: before, rows_after: after, result: res };
 	}
 
-	if (action !== "edit") throw new ArcGISError("action must be edit | calculate | truncate.", "bad_action");
+	if (action === "add_attachment" || action === "delete_attachments") return attachmentEdit(ctx, url, props, args);
+
+	if (action !== "edit") {
+		throw new ArcGISError("action must be edit | calculate | truncate | add_attachment | delete_attachments.", "bad_action");
+	}
 	const adds = asFeatures(args.adds);
 	const updates = asFeatures(args.updates);
 	const oid: string = props.objectIdField ?? "OBJECTID";

@@ -1,29 +1,36 @@
 /**
- * The MCP tools. Each lives in its own folder: index.ts registers it (name, description, input schema) and
- * handler.ts does the work; code several tools use is in shared/. Names, arguments and the
+ * The MCP tools. Each lives in its own folder: index.ts defines it (name, description, input schema, annotations,
+ * handler) and handler.ts does the work; code several tools use is in shared/. Names, arguments and the
  * {"ok": ..., "data": ...} envelope match the ArcGIS Pro Salah MCP portal tools.
  */
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { ArcGISProps } from "../arcgis";
-import * as portalFolders from "./portal_folders";
-import * as portalGroups from "./portal_groups";
-import * as portalItem from "./portal_item";
-import * as portalLayerEdit from "./portal_layer_edit";
-import * as portalLayerQuery from "./portal_layer_query";
-import * as portalLayerSchema from "./portal_layer_schema";
-import * as portalMap from "./portal_map";
-import * as portalPublish from "./portal_publish";
-import * as portalRest from "./portal_rest";
-import * as portalSearch from "./portal_search";
-import * as portalShare from "./portal_share";
-import * as portalWhoami from "./portal_whoami";
+import { batchTool } from "./portal_batch";
+import { tool as portalFolders } from "./portal_folders";
+import { tool as portalGroups } from "./portal_groups";
+import { tool as portalItem } from "./portal_item";
+import { tool as portalLayerEdit } from "./portal_layer_edit";
+import { tool as portalLayerQuery } from "./portal_layer_query";
+import { tool as portalLayerSchema } from "./portal_layer_schema";
+import { tool as portalMap } from "./portal_map";
+import { tool as portalPublish } from "./portal_publish";
+import { tool as portalRest } from "./portal_rest";
+import { tool as portalSearch } from "./portal_search";
+import { tool as portalShare } from "./portal_share";
+import { tool as portalWhoami } from "./portal_whoami";
 import { makeCtx } from "./shared/context";
+import { run, type ToolSpec } from "./shared/mcp";
 
-/** In the order clients list them. */
-const TOOLS = [portalWhoami, portalSearch, portalItem, portalFolders, portalShare, portalPublish, portalLayerQuery,
-	portalLayerEdit, portalLayerSchema, portalMap, portalGroups, portalRest];
+/** Everything portal_batch may call, in the order clients list them. */
+const BATCHABLE = [portalWhoami, portalSearch, portalItem, portalFolders, portalShare, portalPublish, portalLayerQuery,
+	portalLayerEdit, portalLayerSchema, portalMap, portalGroups, portalRest] as ToolSpec[];
+
+export const TOOLS: ToolSpec[] = [...BATCHABLE, batchTool(new Map(BATCHABLE.map((t) => [t.name, t]))) as ToolSpec];
 
 export function registerTools(server: McpServer, props: ArcGISProps, extraHosts: string[] = []): void {
 	const ctx = makeCtx(props, extraHosts);
-	for (const tool of TOOLS) tool.register(server, ctx);
+	for (const t of TOOLS) {
+		server.registerTool(t.name, { title: t.title, description: t.description, inputSchema: t.schema, annotations: t.annotations },
+			async (args: any) => run(ctx.props, () => t.handle(ctx, args)));
+	}
 }

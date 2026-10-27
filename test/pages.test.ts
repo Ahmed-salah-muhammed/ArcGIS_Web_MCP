@@ -1,14 +1,19 @@
 import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { TOPICS } from "../src/contact";
 import {
 	AUTHOR,
+	CATEGORIES,
 	clientDisplay,
 	creditHtml,
+	HOME_HEADERS,
 	homePage,
 	MCP_INSTRUCTIONS,
 	MCP_SERVER_INFO,
 	messagePage,
+	TOOL_DOCS,
 } from "../src/pages";
+import { TOOLS } from "../src/tools";
 
 const PORTFOLIO = "https://ahmedsalah-portfolio.vercel.app/";
 const TITLE = "Full Stack Developer · GIS Developer";
@@ -56,6 +61,36 @@ describe("pages", () => {
 		expect(html).toContain("Signed in as &lt;i&gt;x&lt;/i&gt;");
 		expect(html).not.toContain("<script");
 		expect(messagePage({ tone: "error", title: "x", lines: [] }, AUTHOR)).not.toContain("http-equiv");
+	});
+
+	it("the status page links the documentation in a new tab, so the redirect still happens", () => {
+		const html = messagePage({ tone: "success", title: "Connected", lines: [],
+			action: { href: "https://c.dev/cb", label: "Continue" }, redirect: { href: "https://c.dev/cb", seconds: 2 } }, AUTHOR);
+		expect(html).toMatch(/<a class="button ghost" href="\/" target="_blank" rel="noopener">Documentation/);
+		expect(messagePage({ tone: "error", title: "x", lines: [] }, null)).toContain(">Documentation");
+	});
+
+	it("the home page has the contact form, and may only call its own origin", () => {
+		const html = homePage("https://a.dev", AUTHOR);
+		expect(html).toContain('<a href="#contact" data-nav="contact">Contact us</a>');
+		expect(html).toContain('id="contact-form"');
+		for (const t of TOPICS) expect(html).toContain(`data-topic="${t.replace(/&/g, "&amp;")}"`);
+		expect(html).toContain('name="website" tabindex="-1"');
+		expect(HOME_HEADERS["Content-Security-Policy"]).toContain("connect-src 'self'");
+		expect(html).not.toMatch(/@[a-z0-9-]+\.(com|org|net)/i); // no address of anyone in the page
+	});
+
+	it("documents every tool, and exactly the actions each tool has", () => {
+		const documented = new Map(TOOL_DOCS.map((d) => [d.name, d]));
+		expect([...documented.keys()].sort()).toEqual(TOOLS.map((t) => t.name).sort());
+		for (const t of TOOLS) {
+			const doc = documented.get(t.name)!;
+			expect(CATEGORIES.map((c) => c.id)).toContain(doc.category);
+			let action: any = (t.schema.shape as Record<string, any>).action;
+			while (action && !action.options && action.unwrap) action = action.unwrap();
+			if (action?.options) expect(doc.actions?.map((a) => a.name)).toEqual(action.options);
+			else expect(doc.actions).toBeUndefined();
+		}
 	});
 
 	it("names any MCP client, and gives Claude its orange button", () => {

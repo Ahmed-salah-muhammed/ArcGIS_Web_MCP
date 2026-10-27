@@ -66,6 +66,25 @@ describe("portal_layer_schema", () => {
 		expect(out).toMatchObject({ view_item_id: ID2, view_url: `${VIEW}/0`, view_count: 4 });
 	});
 
+	it("enable_attachments turns them on through the admin URL, and never on a view", async () => {
+		silence();
+		let has = false;
+		const routes = {
+			[`${SVC}/0`]: () => ({ name: "pts", hasAttachments: has }),
+			[SVC]: () => ({ isView: false }),
+			[`${ADMIN}/0/updateDefinition`]: (p: Record<string, unknown>) => {
+				has = (p.updateDefinition as any).hasAttachments;
+				return { success: true };
+			},
+		};
+		const { ctx, calls } = fakeCtx(routes);
+		expect(await schema(ctx, { action: "enable_attachments", target: `${SVC}/0` })).toEqual({ layer: "pts", has_attachments: true, changed: true });
+		expect(calls.find((c) => c.url.endsWith("/updateDefinition"))!.params).toEqual({ updateDefinition: { hasAttachments: true } });
+		expect(await schema(ctx, { action: "enable_attachments", target: `${SVC}/0` })).toMatchObject({ changed: false });
+		const view = fakeCtx({ ...routes, [SVC]: () => ({ isView: true }) });
+		await expect(schema(view.ctx, { action: "enable_attachments", target: `${SVC}/0` })).rejects.toMatchObject({ code: "is_view" });
+	});
+
 	it("renderers: unique values from counts, quantile class breaks, raw JSON passed through", async () => {
 		const { ctx } = fakeCtx({ [`${SVC}/0/query`]: (p) => p.outStatistics
 			? { features: [{ attributes: { TYPE: "b", n: 1 } }, { attributes: { TYPE: "a", n: 9 } }] }

@@ -5,6 +5,9 @@
  * Secrets go in `.dev.vars` (local, gitignored) and `npx wrangler deploy --secrets-file <file>` (deployed):
  *   ARCGIS_CLIENT_ID       client id of YOUR ArcGIS OAuth 2.0 credentials (redirect: <worker>/callback)
  *   COOKIE_ENCRYPTION_KEY  random string, e.g. `openssl rand -hex 32`
+ * Optional, for the documentation page's contact form (without them it answers "not set up"):
+ *   RESEND_API_KEY         an API key of YOUR Resend account (https://resend.com)
+ *   CONTACT_TO             the address the messages go to (`npx wrangler secret put CONTACT_TO`)
  * A fork changes `name` and removes the KV `id` (its first deploy creates a new namespace).
  */
 {
@@ -28,7 +31,10 @@
 		// ArcGIS Online by default; an Enterprise portal works too, e.g. "https://gis.example.com/portal"
 		"ARCGIS_PORTAL_URL": "https://www.arcgis.com",
 		// Comma-separated extra hosts allowed to receive the user's token (e.g. federated servers on another host)
-		"ARCGIS_EXTRA_HOSTS": ""
+		"ARCGIS_EXTRA_HOSTS": "",
+		// Sender of the contact form's emails. Resend's test sender only delivers to your own Resend account's
+		// address; to send from your domain, verify it in Resend and use e.g. "ArcGIS Web MCP <contact@your.domain>"
+		"CONTACT_FROM": "ArcGIS Web MCP <onboarding@resend.dev>"
 	},
 	"observability": {
 		"enabled": true

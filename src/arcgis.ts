@@ -201,9 +201,12 @@ export async function arcgisGet(url: string, params: Record<string, unknown>, to
 	return parseArcGIS(await fetchImpl(u.href, { method: "GET", headers }));
 }
 
+/** A multipart file; `field` is the form field ArcGIS expects ("file" for addItem, "attachment" for attachments). */
+export type UploadFile = { name: string; content: string | Uint8Array; type: string; field?: string };
+
 /** Multipart upload (addItem with a file). Measured: a CSV added as `text` cannot be analyzed or published. */
 export async function arcgisUpload(url: string, params: Record<string, unknown>,
-	file: { name: string; content: string; type: string }, token: string | null, fetchImpl: Fetch = fetch): Promise<any> {
+	file: UploadFile, token: string | null, fetchImpl: Fetch = fetch): Promise<any> {
 	const form = new FormData();
 	form.set("f", "json");
 	for (const [key, value] of Object.entries(params)) {
@@ -211,7 +214,7 @@ export async function arcgisUpload(url: string, params: Record<string, unknown>,
 		form.set(key, typeof value === "object" ? JSON.stringify(value) : String(value));
 	}
 	if (token) form.set("token", token);
-	form.set("file", new Blob([file.content], { type: file.type }), file.name);
+	form.set(file.field ?? "file", new Blob([file.content], { type: file.type }), file.name);
 	return parseArcGIS(await fetchImpl(url, { method: "POST", body: form }));
 }
 

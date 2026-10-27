@@ -2,11 +2,10 @@
  * What every tool handler receives: the signed-in user's props and the ways to call ArcGIS with their token.
  * Tests pass a fake context, so no network or ArcGIS SDK is needed.
  */
-import { type ArcGISProps, arcgisGet, arcgisRequest, arcgisUpload } from "../../arcgis";
+import { type ArcGISProps, arcgisGet, arcgisRequest, arcgisUpload, type UploadFile } from "../../arcgis";
 
 export type Call = (url: string, params?: Record<string, unknown>) => Promise<any>;
-export type Upload = (url: string, params: Record<string, unknown>,
-	file: { name: string; content: string; type: string }) => Promise<any>;
+export type Upload = (url: string, params: Record<string, unknown>, file: UploadFile) => Promise<any>;
 
 export type Ctx = {
 	props: ArcGISProps;

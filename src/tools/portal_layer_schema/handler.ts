@@ -22,7 +22,7 @@ async function serviceInfo(ctx: Ctx, layerUrl: string) {
 }
 
 export type SchemaArgs = {
-	action: "add_field" | "delete_field" | "capabilities" | "renderer" | "labels" | "create_view";
+	action: "add_field" | "delete_field" | "capabilities" | "renderer" | "labels" | "create_view" | "enable_attachments";
 	target: string;
 	layer?: number | string;
 	fields?: { name: string; type?: string; length?: number; alias?: string; nullable?: boolean }[];
@@ -88,6 +88,15 @@ export async function schema(ctx: Ctx, args: SchemaArgs) {
 		const still = args.field_names.filter((n) => now.has(n.toLowerCase()));
 		audit(ctx.props, { tool: "portal_layer_schema", action: "delete_field", target: url, ok: !still.length });
 		return { layer: name, deleted: args.field_names.filter((n) => !still.includes(n)), still_there: still.length ? still : null };
+	}
+
+	if (args.action === "enable_attachments") {
+		refuseView("enable_attachments");
+		if (props.hasAttachments) return { layer: name, has_attachments: true, changed: false };
+		await ctx.request(`${adminUrl(url)}/updateDefinition`, { updateDefinition: { hasAttachments: true } });
+		const now = Boolean((await ctx.request(url)).hasAttachments);
+		audit(ctx.props, { tool: "portal_layer_schema", action: "enable_attachments", target: url, ok: now });
+		return { layer: name, has_attachments: now, changed: now };
 	}
 
 	if (args.action === "capabilities") {
@@ -167,6 +176,7 @@ export async function schema(ctx: Ctx, args: SchemaArgs) {
 		return { view_item_id: created.itemId, view_url: `${created.serviceurl}/0`, where: args.view_where ?? null,
 			fields: args.view_fields ?? null, view_count: count };
 	}
-	throw new ArcGISError("action must be add_field | delete_field | capabilities | renderer | labels | create_view.",
+	throw new ArcGISError(
+		"action must be add_field | delete_field | capabilities | renderer | labels | create_view | enable_attachments.",
 		"bad_action");
 }

@@ -57,4 +57,33 @@ describe("portal_layer_edit", () => {
 			expressions: [{ field: "NAME", value: "z" }] })).rejects.toMatchObject({ code: "confirm_required", preview: { rows_affected: 3 } });
 		expect(urls().some((u) => u.endsWith("/calculate"))).toBe(false);
 	});
+
+	it("add_attachment uploads the bytes under the 'attachment' field; delete needs confirm", async () => {
+		silence();
+		const { ctx, calls, urls } = fakeCtx({
+			[`${SVC}/0`]: () => ({ name: "pts", hasAttachments: true }),
+			[`${SVC}/0/1/addAttachment`]: () => ({ addAttachmentResult: { objectId: 7, success: true } }),
+			[`${SVC}/0/1/deleteAttachments`]: () => ({ deleteAttachmentResults: [{ objectId: 7, success: true }] }),
+		});
+		const out: any = await edit(ctx, { target: `${SVC}/0`, action: "add_attachment", object_id: 1, file_name: "note.txt",
+			content_base64: btoa("hello"), content_type: "text/plain" });
+		const upload = calls.find((c) => c.via === "upload")!;
+		expect(upload.file).toMatchObject({ name: "note.txt", type: "text/plain", field: "attachment" });
+		expect(new TextDecoder().decode((upload.file as any).content)).toBe("hello");
+		expect(out).toMatchObject({ attachment_id: 7, bytes: 5, url: `${SVC}/0/1/attachments/7` });
+		await expect(edit(ctx, { target: `${SVC}/0`, action: "delete_attachments", object_id: 1, attachment_ids: [7] }))
+			.rejects.toMatchObject({ code: "confirm_required" });
+		expect(urls().some((u) => u.endsWith("/deleteAttachments"))).toBe(false);
+		const del: any = await edit(ctx, { target: `${SVC}/0`, action: "delete_attachments", object_id: 1, attachment_ids: [7], confirm: true });
+		expect(del).toMatchObject({ deleted: [7], failed: null });
+	});
+
+	it("attachments need a layer with attachments and valid content", async () => {
+		const off = fakeCtx({ [`${SVC}/0`]: () => ({ name: "pts", hasAttachments: false }) });
+		await expect(edit(off.ctx, { target: `${SVC}/0`, action: "add_attachment", object_id: 1, file_name: "a", content_text: "x" }))
+			.rejects.toMatchObject({ code: "no_attachments" });
+		const on = fakeCtx({ [`${SVC}/0`]: () => ({ name: "pts", hasAttachments: true }) });
+		await expect(edit(on.ctx, { target: `${SVC}/0`, action: "add_attachment", object_id: 1, file_name: "a", content_base64: "%%%" }))
+			.rejects.toThrow(/not valid base64/);
+	});
 });
