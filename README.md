@@ -4,6 +4,7 @@ MCP server for **ArcGIS Online** and **ArcGIS Enterprise**. You sign in with you
 never sees your password and can only do what your account can do.
 
 **Server URL:** `https://arcgis.web-mcp.workers.dev/mcp`
+**Documentation URL:** `https://arcgis.web-mcp.workers.dev/`
 
 ## Connect
 
