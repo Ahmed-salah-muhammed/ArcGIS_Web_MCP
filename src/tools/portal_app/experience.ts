@@ -5,13 +5,14 @@
  * A web map is bound like in published experiences: a WEB_MAP data source plus useDataSources on every map widget
  * (legends and layer lists already point at the map widget). The template keeps its own exbVersion so Experience
  * Builder upgrades it when it loads. theme_color sets the theme's primary colour (customTheme.colors.primary, as a
- * published experience on ArcGIS Online keeps it).
+ * published experience on ArcGIS Online keeps it). With widgets, the app is built from them instead (exb-build.ts).
  */
 import { ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
 import { itemCard } from "../shared/format";
 import { addItem, addResource, orgHome, orRemove, portalSelf, requireItemOfType, updateItem } from "../shared/items";
 import { base } from "../shared/lookup";
+import { buildExperience } from "./exb-build";
 import type { AppArgs } from "./types";
 
 const CDN = "https://experiencedev.arcgis.com/cdn/2400/templates/app";
@@ -59,7 +60,37 @@ export function bindWebMap(config: any, map: { id: string; title: string }, port
 	return dsId;
 }
 
+/** Saves an experience: the Web Experience item, its draft config, and (published) the same config as its data and url. */
+async function saveExperience(ctx: Ctx, args: AppArgs, config: any, title: string, keyword: string, self: any,
+	extra: (item: any, open: string | null, edit: string) => Record<string, unknown>) {
+	const publish = args.publish ?? true;
+	const keywords = ["EXB Experience", "JavaScript", "Ready To Use", publish ? "status: Published" : "status: Draft", "Web Application",
+		"Web Experience", "Web Page", "Web Site", keyword];
+	const { id } = await addItem(ctx, args.folder, { type: "Web Experience", title, typeKeywords: keywords.join(","),
+		tags: (args.tags ?? ["arcgis-web-mcp", "Experience Builder"]).join(","), snippet: args.summary ?? `Experience Builder app (${keyword})` });
+	return orRemove(ctx, [id], async () => {
+		const text = JSON.stringify(config);
+		await addResource(ctx, id, "config/config.json", text);
+		const online = !self.isPortal;
+		const portal = ctx.props.portal.replace(/\/+$/, "");
+		const open = online ? `https://experience.arcgis.com/experience/${id}` : `${portal}/apps/experiencebuilder/experience/?id=${id}`;
+		const edit = online ? `https://experience.arcgis.com/builder/?id=${id}` : `${portal}/apps/experiencebuilder/?id=${id}`;
+		if (publish) await updateItem(ctx, id, { url: open, text });
+		const item = await ctx.request(`${base(ctx)}/content/items/${id}`);
+		return { app: itemCard(item, ctx.props.portal), open: publish ? open : null, edit, ...extra(item, publish ? open : null, edit),
+			...(!publish ? { note_draft: "Saved as a draft: open it in the builder and Publish." } : {}) };
+	});
+}
+
 export async function createExperience(ctx: Ctx, args: AppArgs) {
+	if (args.widgets?.length) {
+		// built from the widgets asked for, not from a template
+		const map = args.webmap_id ? await requireItemOfType(ctx, args.webmap_id, ["Web Map"], "webmap_id") : null;
+		const self = await portalSelf(ctx);
+		const built = await buildExperience(ctx, args, map, orgHome(self, ctx.props.portal));
+		return saveExperience(ctx, args, built.config, built.title, "template:blankfullscreengrid", self, () => ({ built_from: "widgets",
+			widgets: built.built, layout: built.layout, interactions: built.interactions, ...(args.theme_color ? { theme_color: args.theme_color.toLowerCase() } : {}) }));
+	}
 	const name = String(args.template ?? "billboard").toLowerCase().trim().replace(/[\s-]+/g, "_");
 	const tpl = EXB_TEMPLATES[name];
 	if (!tpl) throw new ArcGISError(`No Experience Builder template '${args.template}'. Available: ${Object.keys(EXB_TEMPLATES).join(", ")}`, "not_found");
@@ -76,22 +107,8 @@ export async function createExperience(ctx: Ctx, args: AppArgs) {
 		config.customTheme = { ...(config.customTheme ?? {}), colors: { ...(config.customTheme?.colors ?? {}), primary: args.theme_color.toLowerCase() } };
 	}
 	const title = args.title ?? (map ? `${map.title} experience` : "New experience");
-	const publish = args.publish ?? true;
-	const keywords = ["EXB Experience", "JavaScript", "Ready To Use", publish ? "status: Published" : "status: Draft", "Web Application",
-		"Web Experience", "Web Page", "Web Site", `template:${name}`];
-	const { id } = await addItem(ctx, args.folder, { type: "Web Experience", title, typeKeywords: keywords.join(","),
-		tags: (args.tags ?? ["arcgis-web-mcp", "Experience Builder"]).join(","), snippet: args.summary ?? `Experience Builder app (${name})` });
-	return orRemove(ctx, [id], async () => {
-		const text = JSON.stringify(config);
-		await addResource(ctx, id, "config/config.json", text);
-		const online = !self.isPortal;
-		const open = online ? `https://experience.arcgis.com/experience/${id}` : `${ctx.props.portal.replace(/\/+$/, "")}/apps/experiencebuilder/experience/?id=${id}`;
-		const edit = online ? `https://experience.arcgis.com/builder/?id=${id}` : `${ctx.props.portal.replace(/\/+$/, "")}/apps/experiencebuilder/?id=${id}`;
-		if (publish) await updateItem(ctx, id, { url: open, text });
-		const item = await ctx.request(`${base(ctx)}/content/items/${id}`);
-		return { app: itemCard(item, ctx.props.portal), open: publish ? open : null, edit, template: name, map_bound: Boolean(map),
-			...(args.theme_color ? { theme_color: args.theme_color.toLowerCase() } : {}),
-			...(tpl.needs_layer ? { note: `These widgets need a layer chosen in the builder: ${tpl.needs_layer.join(", ")}.` } : {}),
-			...(!publish ? { note_draft: "Saved as a draft: open it in the builder and Publish." } : {}) };
-	});
+	return saveExperience(ctx, args, config, title, `template:${name}`, self, () => ({ template: name, map_bound: Boolean(map),
+		...(args.theme_color ? { theme_color: args.theme_color.toLowerCase() } : {}),
+		...(tpl.needs_layer ? { note: `These widgets need a layer chosen in the builder: ${tpl.needs_layer.join(", ")}. `
+			+ "Or build the app from widgets (widgets = [...]) to have them bound." } : {}) }));
 }

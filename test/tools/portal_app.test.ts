@@ -1,3 +1,4 @@
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { autoWidgets, chartGuides, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
 import { arcadeTest, filterSql } from "../../src/tools/portal_app/filters";
@@ -409,6 +410,71 @@ describe("portal_app: professional dashboards", () => {
 	});
 });
 
+describe("portal_app: dashboards on several layers", () => {
+	const govs = { name: "governorates", geometryType: "esriGeometryPolygon", objectIdField: "OID", fields: [{ name: "OID", type: "esriFieldTypeOID" },
+		{ name: "GOV_NAME", type: "esriFieldTypeString" }, { name: "POP", type: "esriFieldTypeInteger" }] };
+	const sites = { name: "sites", geometryType: "esriGeometryPoint", objectIdField: "OBJECTID", fields: [{ name: "OBJECTID", type: "esriFieldTypeOID" },
+		{ name: "governorate", type: "esriFieldTypeString" }, { name: "STATUS", type: "esriFieldTypeString" }] };
+	const SVC2 = "https://services.example.com/arcgis/rest/services/govs/FeatureServer";
+	const routes = () => ({ ...common({
+		[`${SVC}/0`]: () => sites, [`${SVC2}/0`]: () => govs,
+		[`${SVC}/0/query`]: () => ({ features: [{ attributes: { STATUS: "open", n: 3 } }] }),
+		[`${SVC2}/0/query`]: () => ({ features: [{ attributes: { GOV_NAME: "Giza", n: 1 } }] }),
+	}), [`/content/items/${MAP}/data`]: () => ({ operationalLayers: [{ id: "op-sites", title: "Sites", url: `${SVC}/0` },
+		{ id: "op-govs", title: "Governorates", url: `${SVC2}/0` }] }) });
+	const build = async (args: Record<string, unknown>) => {
+		silence();
+		const { ctx, calls } = fakeCtx(routes());
+		const out: any = await app(ctx, { kind: "dashboard", webmap_id: MAP, ...args } as any);
+		const data = json(sent(calls, "/addItem")[0].params.text);
+		const byName = (name: string) => data.desktopView.widgets.find((w: any) => w.name === name);
+		return { out, data, byName, calls };
+	};
+
+	it("each widget reads its own layer; across layers they filter through a linked field, and polygons filter by area", async () => {
+		const { out, data, byName, calls } = await build({ links: [{ from: "GOV_NAME", to: "governorate" }],
+			widgets: [{ type: "map" }, { type: "indicator", title: "Sites" }, { type: "pie", field: "STATUS", title: "By status" },
+				{ type: "bar", field: "GOV_NAME", layer: "Governorates", title: "Governorates" },
+				{ type: "table", layer: "governorates", title: "Gov table", fields: ["GOV_NAME", "POP"] }],
+			selectors: [{ type: "category", field: "governorate" }] });
+		const [map, sitesN, pie, bar, govTable] = data.desktopView.widgets;
+		expect(sitesN.datasets[0].dataSource).toEqual({ type: "layerDataSource", itemId: MAP, layerId: "op-sites" });
+		expect(bar.datasets[0].dataSource).toEqual({ type: "layerDataSource", itemId: MAP, layerId: "op-govs" });
+		// the governorates layer is read once for both of its widgets
+		expect(calls.filter((c) => c.url === `${SVC2}/0`)).toHaveLength(1);
+		// the bar (governorates) filters the sites' widgets through governorate, its own layer's without a field map
+		expect(bar.events[0].actions[0].targets).toEqual([
+			{ targetId: `${sitesN.id}#main`, by: "whereClause", requiresSelection: false, fieldMap: [{ sourceName: "GOV_NAME", targetName: "governorate" }] },
+			{ targetId: `${pie.id}#main`, by: "whereClause", requiresSelection: false, fieldMap: [{ sourceName: "GOV_NAME", targetName: "governorate" }] },
+			{ targetId: `${govTable.id}#main`, by: "whereClause", requiresSelection: false },
+			{ targetId: `${map.id}#op-sites`, by: "whereClause", requiresSelection: false, fieldMap: [{ sourceName: "GOV_NAME", targetName: "governorate" }] },
+			{ targetId: `${map.id}#op-govs`, by: "whereClause", requiresSelection: false }]);
+		// the pie's STATUS exists only on sites: the governorates' widgets are left alone
+		expect(pie.events[0].actions[0].targets.map((t: any) => t.targetId)).toEqual([`${sitesN.id}#main`, `${map.id}#op-sites`]);
+		// selecting a governorate on the map filters everything inside it; selecting a site, only the sites' widgets
+		const onMap = Object.fromEntries(map.layers.map((x: any) => [x.dataSource.layerId, x.events[0].actions[0].targets.map((t: any) => t.targetId)]));
+		expect(onMap["op-govs"]).toEqual([sitesN, pie, bar, govTable].map((w) => `${w.id}#main`));
+		expect(onMap["op-sites"]).toEqual([sitesN, pie].map((w) => `${w.id}#main`));
+		// the selector on sites reaches the governorates' widgets through the link
+		const sel = data.desktopView.header.selectors[0];
+		expect(sel.events[0].actions[0].targets).toContainEqual({ targetId: `${bar.id}#main`, by: "whereClause", requiresSelection: false,
+			fieldMap: [{ sourceName: "governorate", targetName: "GOV_NAME" }] });
+		expect(out.data_from).toEqual([{ layer: "sites", through: "the web map", widgets: 2, on_map: true },
+			{ layer: "governorates", through: "the web map", widgets: 2, on_map: true }]);
+		expect(byName("By status")).toBe(pie);
+	});
+
+	it("without a shared field, other layers are not filtered and the selector says so; unknown links are refused", async () => {
+		const { data, out } = await build({ widgets: [{ type: "pie", field: "STATUS", title: "P" }, { type: "indicator", layer: 1, title: "Govs" }],
+			selectors: [{ type: "category", field: "STATUS" }] });
+		const [pie, govsN] = data.desktopView.widgets;
+		expect(govsN.datasets[0].dataSource.layerId).toBe("op-govs");
+		expect(pie.events).toBeUndefined();
+		expect(out.selectors.wired[0]).toMatchObject({ field: "STATUS", does_not_filter: ["Govs"] });
+		await expect(build({ widgets: [{ type: "indicator" }], links: [{ from: "NOPE", to: "governorate" }] })).rejects.toThrow(/links: 'NOPE'/);
+	});
+});
+
 describe("portal_app: executive dashboards", () => {
 	const HEAT = "9".repeat(32);
 	const layer = { name: "users", objectIdField: "OBJECTID", fields: [{ name: "OBJECTID", type: "esriFieldTypeOID" },
@@ -563,6 +629,129 @@ describe("portal_app: Experience Builder", () => {
 		expect(out.templates).toHaveLength(50);
 		expect(out.templates.find((t: any) => t.name === "billboard")).toMatchObject({ map_widgets: 1, ready_with_a_map: true });
 		expect(calls).toHaveLength(0);
+	});
+});
+
+describe("portal_app: Experience Builder apps built from widgets", () => {
+	const sites = { name: "sites", geometryType: "esriGeometryPoint", objectIdField: "OBJECTID", displayField: "NAME", fields: [
+		{ name: "OBJECTID", type: "esriFieldTypeOID", alias: "OBJECTID" }, { name: "NAME", type: "esriFieldTypeString", alias: "Name" },
+		{ name: "STATUS", type: "esriFieldTypeString", alias: "Status", domain: { codedValues: [{ code: "O", name: "Open" }, { code: "C", name: "Closed" }] } },
+		{ name: "COST", type: "esriFieldTypeDouble", alias: "Cost" }, { name: "OPENED", type: "esriFieldTypeDate", alias: "Opened" }] };
+	const govs = { name: "governorates", geometryType: "esriGeometryPolygon", objectIdField: "OID", fields: [{ name: "OID", type: "esriFieldTypeOID" },
+		{ name: "GOV", type: "esriFieldTypeString", alias: "Governorate" }, { name: "POP", type: "esriFieldTypeInteger", alias: "Population" }] };
+	const SVC2 = "https://services.example.com/arcgis/rest/services/govs/FeatureServer";
+	const routes = () => ({ ...common({
+		[`${SVC}/0`]: () => sites, [`${SVC2}/0`]: () => govs,
+		[`${SVC}/0/query`]: () => ({ features: [{ attributes: { STATUS: "O", n: 5 } }, { attributes: { STATUS: "C", n: 2 } }] }),
+	}), [`/content/items/${MAP}/data`]: () => ({ operationalLayers: [{ id: "op-sites", title: "Sites", url: `${SVC}/0` },
+		{ id: "grp", title: "Boundaries", layerType: "GroupLayer", layers: [{ id: "op-govs", title: "Governorates", url: `${SVC2}/0` }] }] }) });
+	const build = async (args: Record<string, unknown>) => {
+		silence();
+		const { ctx, calls } = fakeCtx(routes());
+		const out: any = await app(ctx, { kind: "experience", webmap_id: MAP, ...args } as any);
+		const config = json(sent(calls, "/addResources")[0].params.text);
+		const byLabel = (label: string) => Object.values<any>(config.widgets).find((w) => w.label === label);
+		return { out, config, byLabel, calls };
+	};
+
+	it("builds a grid page with a header; widgets bound to the map's layers; selections zoom, charts filter", async () => {
+		const { out, config, byLabel, calls } = await build({ title: "Sites <app>", subtitle: "Live", logo_url: "https://x.example/logo.png",
+			header_color: "#ffffff", theme: "velvet", theme_color: "#1A4780", widgets: [
+				{ type: "map", title: "Map" }, { type: "indicator", title: "Open sites", column: "left" },
+				{ type: "filter", title: "Filters", filters: [{ label: "Open", where: { STATUS: "Open" } }, { label: "Big", where: { COST: { op: ">=", value: 100 } } },
+					{ label: "Recent", where: { OPENED: { op: "last", value: 30, unit: "day" } } }, { label: "When", ask: "OPENED" }, { label: "Which", ask: "NAME" }] },
+				{ type: "pie", field: "STATUS", title: "By status", donut: true }, { type: "bar", field: "GOV", value_field: "POP", layer: "Governorates", title: "Population" },
+				{ type: "table", title: "Sites table", fields: ["NAME", "STATUS"] }, { type: "list", title: "Sites list", fields: ["STATUS"], tab: "Data" },
+				{ type: "legend", tab: "Data" }, { type: "details", column: "right" }] });
+		expect(config).toMatchObject({ exbVersion: "1.17.0", template: "blankfullscreengrid", theme: "themes/velvet/",
+			customTheme: { colors: { primary: "#1a4780" } }, pages: { page_1: { header: true, isDefault: true } } });
+		expect(config.dataSources.dataSource_1).toEqual({ id: "dataSource_1", type: "WEB_MAP", sourceLabel: "Parks", itemId: MAP,
+			portalUrl: "https://acme.maps.arcgis.com" });
+		const map = byLabel("Map");
+		expect(map).toMatchObject({ uri: "widgets/arcgis/arcgis-map/", config: { initialMapDataSourceID: "dataSource_1" },
+			useDataSources: [{ dataSourceId: "dataSource_1", mainDataSourceId: "dataSource_1" }] });
+		expect(config.layouts[map.layouts.MapFixedLayout.LARGE]).toEqual({ content: {}, type: "FIXED", label: "Map FixedLayout" });
+		// layers: a top-level one, and one inside a group layer
+		const table = byLabel("Sites table");
+		expect(table.config.layersConfig[0].useDataSource).toEqual({ dataSourceId: "dataSource_1-op-sites", mainDataSourceId: "dataSource_1-op-sites",
+			rootDataSourceId: "dataSource_1", fields: ["NAME", "STATUS"] });
+		expect(table.config.layersConfig[0].tableFields.map((f: any) => [f.name, f.type])).toEqual([["NAME", "STRING"], ["STATUS", "STRING"]]);
+		const bar = byLabel("Population");
+		expect(bar.useDataSources[0].dataSourceId).toBe("dataSource_1-grp-op-govs");
+		expect(bar.config.webChart.dataSource.query).toEqual({ groupByFieldsForStatistics: ["GOV"],
+			outStatistics: [{ statisticType: "sum", onStatisticField: "POP", outStatisticFieldName: "sum_of_POP" }] });
+		expect(config.dataSources[bar.outputDataSources[0]]).toMatchObject({ type: "FEATURE_LAYER", isOutputFromWidget: true,
+			schema: { idField: "__outputid__", fields: { GOV: { type: "STRING", originFields: ["GOV"] }, sum_of_POP: { type: "NUMBER", originFields: ["POP"] } } } });
+		const pie = byLabel("By status");
+		expect(pie.config.template).toBe("donut");
+		expect(pie.config.webChart.series[0]).toMatchObject({ type: "pieSeries", innerRadius: 60, x: "STATUS", y: "count_of_OBJECTID" });
+		expect(pie.config.webChart.series[0].slices.map((x: any) => [x.sliceId, x.label])).toEqual([["O", "Open"], ["C", "Closed"]]);
+		// filter items: preset SQL and ask-for-value parts
+		const items = byLabel("Filters").config.filterItems;
+		expect(items.map((i: any) => i.sqlExprObj.sql)).toEqual(["((STATUS = 'O'))", "((COST >= 100))",
+			"((OPENED BETWEEN CURRENT_TIMESTAMP - 30 AND CURRENT_TIMESTAMP))", "", ""]);
+		expect(items[0].sqlExprObj.parts[0]).toMatchObject({ operator: "STRING_OPERATOR_IS", valueOptions: { value: [{ value: "O", label: "Open" }] } });
+		expect(items[3].sqlExprObj.parts[0]).toMatchObject({ operator: "DATE_OPERATOR_IS_BETWEEN", displayType: "USE_ASK_FOR_VALUE",
+			valueOptions: { inputEditor: "DOUBLE_DATE_PICKER" } });
+		expect(items[4].sqlExprObj.parts[0]).toMatchObject({ operator: "STRING_OPERATOR_IS", valueOptions: { sourceType: "UNIQUE" } });
+		// the number is a live COUNT expression
+		const number = byLabel("Open sites");
+		const expr = decodeURIComponent(/data-expression="([^"]+)"/.exec(number.config.text)![1]);
+		expect(JSON.parse(expr)).toEqual({ name: "COUNT({OBJECTID})", parts: [{ type: "FUNCTION", exp: "COUNT" }, { type: "OPERATOR", exp: "(" },
+			{ type: "FIELD", exp: "{OBJECTID}", dataSourceId: "dataSource_1-op-sites", jimuFieldName: "OBJECTID" }, { type: "OPERATOR", exp: ")" }] });
+		// the list's card shows its fields
+		const list = byLabel("Sites list");
+		const cardText = config.widgets[config.layouts[list.layouts.DEFAULT.LARGE].content[0].widgetId].config.text;
+		expect(cardText).toContain("{Name}");
+		expect(cardText).toContain("{Status}");
+		expect(byLabel("Legend").useMapWidgetIds).toEqual([map.id]);
+		// interactions: the table and list zoom the map; the pie filters the map, the table and the list of its layer
+		const messages = Object.values<any>(config.messageConfigs);
+		const of = (w: any) => messages.find((m) => m.widgetId === w.id);
+		expect(of(table).actions.map((a: any) => [a.actionName, a.widgetId])).toEqual([["flash", map.id], ["zoomToFeature", map.id]]);
+		const pieActions = of(pie).actions;
+		expect(pieActions.map((a: any) => [a.actionName, a.widgetId])).toEqual([["flash", map.id], ["filter", map.id], ["filter", table.id], ["filter", list.id]]);
+		expect(pieActions[1].config).toMatchObject({ messageUseDataSource: { dataSourceId: pie.outputDataSources[0], fields: ["STATUS"] },
+			actionUseDataSource: { dataSourceId: "dataSource_1-op-sites", fields: ["STATUS"] }, connectionType: "SET_CUSTOM_FIELDS" });
+		// the bar's layer has no table or list: it filters the map only
+		expect(of(bar).actions.map((a: any) => a.actionName)).toEqual(["flash", "filter"]);
+		// the grid: main row (left | center | right) over the bottom row; the list and legend share a tabbed panel
+		const grid = config.layouts[config.pages.page_1.layout.LARGE];
+		const node = (id: string) => grid.content[id];
+		const rootNode = node(grid.setting.rootItem);
+		expect(rootNode.gridType).toBe(1);
+		const [mainRow, bottomRow] = rootNode.children.map(node);
+		expect([mainRow.gridType, mainRow.bbox.width, bottomRow.bbox.width]).toEqual([0, 65, 35]);
+		const [left, center, right] = mainRow.children.map(node);
+		expect(center).toMatchObject({ type: "WIDGET", widgetId: map.id, gridType: 3, hasItemHeader: false });
+		expect(left.children.map(node).map((n: any) => n.gridType)).toEqual([3, 3, 2]);
+		expect(left.children.map(node)[2].children.map(node).map((n: any) => n.widgetId)).toEqual([list.id, byLabel("Legend").id]);
+		expect(right.children.map(node).map((n: any) => n.widgetId)).toEqual([pie.id, bar.id, byLabel("Details").id]);
+		expect(bottomRow.children.map(node)[0]).toMatchObject({ widgetId: table.id, hasItemHeader: true });
+		expect(grid.setting).toMatchObject({ mainItemId: map.id, splitSize: 10 });
+		// the header: title on a light colour in dark text, the logo
+		expect(config.header).toMatchObject({ height: { LARGE: 64 }, backgroundColor: "#ffffff", textColor: "#1a1a1a" });
+		const header = Object.values<any>(config.layouts[config.header.layout.LARGE].content).map((c) => config.widgets[c.widgetId]);
+		expect(header[0].config.text).toContain("Sites &lt;app&gt;");
+		expect(header[1].config.functionConfig.imageParam).toMatchObject({ url: "https://x.example/logo.png", imgSourceType: "BY_URL" });
+		expect(out).toMatchObject({ built_from: "widgets", theme_color: "#1a4780" });
+		expect(out.interactions).toHaveLength(4);
+		expect(String(sent(calls, "/addItem")[0].params.typeKeywords)).toContain("template:blankfullscreengrid");
+	});
+
+	it("checks widgets, filters and layers before anything is created; dashboards refuse experience-only widgets", async () => {
+		const { ctx, calls } = fakeCtx(routes());
+		const make = (args: Record<string, unknown>) => app(ctx, { kind: "experience", webmap_id: MAP, ...args } as any);
+		await expect(make({ widgets: [{ type: "gauge" }] })).rejects.toThrow(/Experience Builder widgets here/);
+		await expect(make({ widgets: [{ type: "filter", filters: [{ label: "x", where: { COST: { op: "<=", value: 1 } } }] }] }))
+			.rejects.toThrow(/A filter widget here takes/);
+		await expect(make({ widgets: [{ type: "table", layer: "Nope" }] })).rejects.toThrow(/No feature layer 'Nope'/);
+		await expect(make({ widgets: [{ type: "indicator", statistic: "avg", field: "COST" }] })).rejects.toThrow(/count \| sum \| min \| max/);
+		await expect(make({ widgets: [{ type: "legend" }] })).rejects.toThrow(/needs a map widget/);
+		await expect(make({ widgets: [{ type: "map" }], theme: "neon" })).rejects.toThrow(/theme must be/);
+		await expect(app(ctx, { kind: "experience", widgets: [{ type: "table" }] } as any)).rejects.toThrow(/need webmap_id/);
+		await expect(app(ctx, { kind: "dashboard", webmap_id: MAP, widgets: [{ type: "filter" }] } as any)).rejects.toThrow(/for Experience Builder apps/);
+		expect(sent(calls, "/addItem")).toHaveLength(0);
 	});
 });
 
@@ -799,6 +988,52 @@ describe("portal_app: Field Maps", () => {
 		expect(out.layers[0]).toMatchObject({ groups: ["Details"], photos: true, fields: ["TYPE", "INSTALLED", "NOTE", "HEIGHT"] });
 		await expect(app(ctx, { kind: "fieldmaps", webmap_id: MAP, options: { overwrite_forms: true }, form: { required: ["NOPE"] } }))
 			.rejects.toThrow(/no editable field 'NOPE'/);
+	});
+});
+
+describe("portal_app: custom widgets for Experience Builder Developer Edition", () => {
+	const syntax = (path: string, code: string) => {
+		const out = ts.transpileModule(code, { fileName: path, reportDiagnostics: true,
+			compilerOptions: { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.ESNext } });
+		return (out.diagnostics ?? []).map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"));
+	};
+
+	for (const data of ["none", "layer", "map", "layer_and_map"] as const) {
+		it(`data=${data}: Esri's widget layout, valid TSX, every string it uses translated`, async () => {
+			const { ctx, calls } = fakeCtx(common());
+			const out: any = await app(ctx, { kind: "exb_widget", custom_widget: { name: "Site List", data, description: "Lists sites." } } as any);
+			expect(calls).toHaveLength(0);
+			expect(out).toMatchObject({ widget: "site-list", folder: "client/your-extensions/widgets/site-list", exb_version: "1.21.0" });
+			expect(Object.keys(out.files).sort()).toEqual(["README.md", "config.json", "icon.svg", "manifest.json", "src/config.ts",
+				"src/runtime/translations/default.ts", "src/runtime/widget.tsx", "src/setting/setting.tsx", "src/setting/translations/default.ts"]);
+			const manifest = JSON.parse(out.files["manifest.json"]);
+			expect(manifest).toMatchObject({ name: "site-list", label: "Site List", type: "widget", exbVersion: "1.21.0", translatedLocales: ["en"] });
+			expect(manifest.dependency).toBe(data.includes("map") ? "jimu-arcgis" : undefined);
+			for (const f of ["src/runtime/widget.tsx", "src/setting/setting.tsx", "src/config.ts", "src/runtime/translations/default.ts"]) {
+				expect(syntax(f, out.files[f])).toEqual([]);
+			}
+			const widget = out.files["src/runtime/widget.tsx"];
+			const setting = out.files["src/setting/setting.tsx"];
+			expect(widget.includes("DataSourceComponent")).toBe(data.includes("layer"));
+			expect(widget.includes("JimuMapViewComponent")).toBe(data.includes("map"));
+			expect(setting.includes("DataSourceSelector")).toBe(data.includes("layer"));
+			expect(setting.includes("MapWidgetSelector")).toBe(data.includes("map"));
+			expect(widget).not.toContain("jimu-for-builder");
+			// every translate('key') has its string in that surface's translations
+			const keys = (code: string) => [...code.matchAll(/translate\('(\w+)'/g)].map((m) => m[1]);
+			for (const [code, file] of [[widget, "src/runtime/translations/default.ts"], [setting, "src/setting/translations/default.ts"]]) {
+				const messages = out.files[file];
+				for (const k of keys(code)) expect(messages).toContain(`${k}:`);
+			}
+			expect(out.steps.some((s: string) => s.includes("npm run tscheck"))).toBe(true);
+		});
+	}
+
+	it("names and versions are checked", async () => {
+		const { ctx } = fakeCtx(common());
+		await expect(app(ctx, { kind: "exb_widget" } as any)).rejects.toThrow(/custom_widget.name is required/);
+		await expect(app(ctx, { kind: "exb_widget", custom_widget: { name: "9 lives" } } as any)).rejects.toThrow(/starting with a letter/);
+		await expect(app(ctx, { kind: "exb_widget", custom_widget: { name: "x-y" }, exb_version: "latest" } as any)).rejects.toThrow(/exb_version/);
 	});
 });
 

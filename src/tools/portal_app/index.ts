@@ -30,11 +30,20 @@ export const tool = defineTool({
 		+ "(target lines/bands), highlight [{field, when, color, background}] (table cell / list row colours), sort_by \"FIELD desc\"}], "
 		+ "or omitted for an automatic one; selectors [{type: category|date|number, field, title, multiple, display dropdown|buttons|"
 		+ "calendar, presets [{label, last, unit}], operator >=|<=|=, min, max, step}] filter everything, selectors_at header|sidebar, "
-		+ "sidebar_title; menu_links [{label, url}], logo_link; interactive (default true: selecting in a chart/list/"
+		+ "sidebar_title; menu_links [{label, url}], logo_link; several layers: target / layer on any widget or selector (another item, "
+		+ "or another layer of the web map); across layers widgets filter each other through a field both have (same name, or "
+		+ "links [{from, to}]) and selecting a polygon on the map filters what lies inside; interactive (default true: selecting in a chart/list/"
 		+ "table filters the other widgets and the map and zooms to it, selecting on the map filters them), extent_filter (default true: "
 		+ "moving the map filters them); style classic|executive (dark panels with icons, donuts with outside labels, smooth area "
 		+ "lines; navy theme); theme light|dark|navy; subtitle; logo_url) | "
-		+ "experience (Experience Builder: template name, webmap_id bound to its maps, theme_color #rrggbb; publish default true) | "
+		+ "experience (Experience Builder. With widgets: an app built from them on a grid page with a header, every widget bound to "
+		+ "a layer of webmap_id (layer = title/id/index): map | legend | layers | basemaps | table (fields) | bar | line | pie (donut) "
+		+ "(field, value_field, statistic count|sum|min|max, color, rotated, labels, period) | list (field, fields) | filter "
+		+ "(filters [{label, where {FIELD: condition}} or {label, ask: FIELD}]) | indicator (statistic count|sum|min|max of field, "
+		+ "live) | details | text | image | embed (url); column left|center|right|bottom, tab, title; selecting in tables/lists "
+		+ "zooms the map, selecting in charts filters the map, tables and lists; title, subtitle, logo_url, header_color, theme "
+		+ "default|master|meadow|velvet|astro, theme_color. Without widgets: a template by name with webmap_id bound to its maps, "
+		+ "theme_color; publish default true) | "
 		+ "storymap (blocks = [{type: heading (level 2-4)|text|quote|bullets|numbered (items)|image (url, size, link)|map (webmap_id, size)|"
 		+ "embed (url, display card|inline)|video (url)|button (text, url)|separator|number (value, text)|swipe (left/right: two webmap_id or "
 		+ "two image)|sidecar (style docked|floating|slideshow, slides [{heading, text, webmap_id|image|url}])|timeline (style waterfall|"
@@ -47,7 +56,11 @@ export const tool = defineTool({
 		+ "fieldmaps (webmap_id: forms for its editable layers from their fields, fields = which, form = {groups [{label, fields, "
 		+ "collapsed}], hints {FIELD: text}, required [FIELD], read_only [FIELD], show_when {FIELD: {OTHER: condition}}, photos true|label}, "
 		+ "options.offline, options.overwrite_forms) | "
-		+ "exb_developer (registers Experience Builder Developer Edition; returns the client ID and the steps). "
+		+ "exb_developer (registers Experience Builder Developer Edition; returns the client ID and the steps) | "
+		+ "exb_widget (a custom widget for Developer Edition: custom_widget {name, label, description, data none|layer|map|layer_and_map}, "
+		+ "exb_version; returns its files in Esri's widget layout (manifest.json, config.json, icon.svg, README.md, src/config.ts, "
+		+ "src/runtime/widget.tsx, src/setting/setting.tsx, translations) and the steps to put them in client/your-extensions/widgets; "
+		+ "creates nothing in ArcGIS). "
 		+ "Returns the new item and the link to open it.",
 	schema: z.object({
 		action: z.enum(["templates", "create"]).optional().describe("Default create"),
@@ -63,6 +76,9 @@ export const tool = defineTool({
 		options: z.record(z.string(), z.any()).optional(),
 		widgets: z.array(z.object({
 			type: z.enum(WIDGET_TYPES),
+			target: z.string().optional().describe("dashboard: this widget's own feature layer item (default the dashboard's)"),
+			layer: z.union([z.string(), z.number()]).optional()
+				.describe("dashboard: this widget's layer: of target, or of the web map (title/id/index) when there is no target"),
 			field: z.string().optional(),
 			value_field: z.string().optional(),
 			statistic: z.enum(STATISTICS).optional(),
@@ -82,6 +98,9 @@ export const tool = defineTool({
 			values: z.array(z.object({ label: z.string().max(40), field: z.string().optional(), statistic: z.enum(STATISTICS).optional(),
 				color: z.string().optional() })).max(4).optional().describe("list with group_by: the numbers on each row; no field = count"),
 			webmap_id: z.string().optional().describe("map: another web map that moves with the main one"),
+			donut: z.boolean().optional().describe("experience pie: a hole in the middle"),
+			filters: z.array(z.object({ label: z.string().max(60), where: conditions.optional(), ask: z.string().optional() })).max(12).optional()
+				.describe("experience filter widget: [{label, where: {FIELD: condition}}] presets, or [{label, ask: FIELD}] asking the user"),
 			compare_to: conditions.optional().describe("indicator: the reference rows ({} = all), e.g. last year"),
 			compare_text: z.string().max(120).optional().describe("indicator: text under the value; {calculated/reference}, {calculated/percentChange}"),
 			higher_is_better: z.boolean().optional().describe("indicator with compare_to: green at/above the reference (default true)"),
@@ -99,6 +118,8 @@ export const tool = defineTool({
 		selectors: z.array(z.object({
 			type: z.enum(SELECTOR_TYPES),
 			field: z.string(),
+			target: z.string().optional().describe("the selector's own layer item (default the dashboard's)"),
+			layer: z.union([z.string(), z.number()]).optional(),
 			title: z.string().max(80).optional(),
 			multiple: z.boolean().optional().describe("category: pick several"),
 			display: z.enum(["dropdown", "buttons", "calendar"]).optional().describe("category: dropdown|buttons; date: buttons (presets) or calendar"),
@@ -111,6 +132,8 @@ export const tool = defineTool({
 		})).max(8).optional().describe("dashboard: selectors that filter every widget and the map"),
 		selectors_at: z.enum(SELECTOR_PLACES).optional().describe("dashboard: header (default for up to 2) or sidebar"),
 		sidebar_title: z.string().max(200).optional(),
+		links: z.array(z.object({ from: z.string(), to: z.string() })).max(10).optional()
+			.describe("dashboard: fields that mean the same in two layers under different names, e.g. {from: GOV_NAME, to: governorate}"),
 		menu_links: z.array(z.object({ label: z.string().max(60), url: z.string() })).max(8).optional().describe("dashboard: header menu links (https)"),
 		logo_link: z.string().optional().describe("dashboard: where clicking the logo goes (https)"),
 		style: z.enum(STYLES).optional().describe("dashboard: classic (default) or executive"),
@@ -156,7 +179,12 @@ export const tool = defineTool({
 			photos: z.union([z.boolean(), z.string().max(60)]).optional().describe("a photo element (layers with attachments)"),
 		}).optional().describe("fieldmaps: how the forms look and behave"),
 		theme_color: z.string().optional().describe("experience: the theme's primary colour #rrggbb"),
+		header_color: z.string().optional().describe("experience built from widgets: the header colour #rrggbb"),
 		redirect_uris: z.array(z.string()).optional().describe("exb_developer: default https://localhost:3001/"),
+		custom_widget: z.object({ name: z.string().max(50), label: z.string().max(60).optional(), description: z.string().max(300).optional(),
+			data: z.enum(["none", "layer", "map", "layer_and_map"]).optional(), author: z.string().max(80).optional() }).optional()
+			.describe("exb_widget: the widget; data = what it works with (default layer)"),
+		exb_version: z.string().optional().describe("exb_widget: Developer Edition version, default 1.21.0"),
 		questions: z.array(z.object({
 			type: z.enum(QUESTION_TYPES),
 			label: z.string(),

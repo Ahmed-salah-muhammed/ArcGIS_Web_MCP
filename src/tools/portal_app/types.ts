@@ -1,12 +1,15 @@
 /** The arguments portal_app takes, shared by every kind of app. */
 import type { Condition, DateUnit } from "./filters";
 
-export const APP_KINDS = ["instant", "dashboard", "experience", "storymap", "survey", "fieldmaps", "exb_developer"] as const;
+export const APP_KINDS = ["instant", "dashboard", "experience", "storymap", "survey", "fieldmaps", "exb_developer", "exb_widget"] as const;
 export type AppKind = (typeof APP_KINDS)[number];
 
-export const WIDGET_TYPES = ["map", "indicator", "gauge", "pie", "bar", "line", "list", "table", "details", "legend", "text", "embed"] as const;
+export const WIDGET_TYPES = ["map", "indicator", "gauge", "pie", "bar", "line", "list", "table", "details", "legend", "text", "embed",
+	"filter", "layers", "basemaps", "image"] as const;
+/** Widget types only Experience Builder apps take. */
+export const EXB_ONLY = new Set(["filter", "layers", "basemaps", "image"]);
 export const STATISTICS = ["count", "sum", "avg", "min", "max"] as const;
-export const COLUMNS = ["left", "center", "right"] as const;
+export const COLUMNS = ["left", "center", "right", "bottom"] as const;
 export const PERIODS = ["day", "month", "year"] as const;
 export const STYLES = ["classic", "executive"] as const;
 export const ICONS = ["person", "people", "billboard", "screen", "check", "pin", "chart", "alert", "building"] as const;
@@ -16,6 +19,10 @@ export const SELECTOR_PLACES = ["header", "sidebar"] as const;
 
 export type WidgetSpec = {
 	type: (typeof WIDGET_TYPES)[number];
+	/** The widget's own layer: another feature layer item (target, with layer = its sublayer), or layer alone = a
+	 * layer of the web map (title, id or index), or of the dashboard's item when there is no web map. */
+	target?: string;
+	layer?: string | number;
 	/** indicator: the field the statistic is on; pie/bar/line: the category field; list: the line shown. */
 	field?: string;
 	/** pie/bar/line: the summed/averaged field (count needs none). */
@@ -66,12 +73,19 @@ export type WidgetSpec = {
 	highlight?: { field: string; when: Condition; color?: string; background?: string }[];
 	/** list / table: the order, "FIELD" or "FIELD desc". */
 	sort_by?: string;
+	/** experience pie: a hole in the middle. */
+	donut?: boolean;
+	/** experience filter widget: preset items ({label, where: {FIELD: condition}}) or items asking the user ({label, ask: FIELD}). */
+	filters?: { label: string; where?: Record<string, Condition>; ask?: string }[];
 };
 
 /** A dashboard selector: it filters every widget of the layer and the map's copy of it. */
 export type SelectorSpec = {
 	type: (typeof SELECTOR_TYPES)[number];
 	field: string;
+	/** The selector's layer, as for widgets (default the dashboard's). */
+	target?: string;
+	layer?: string | number;
 	title?: string;
 	/** category: pick several values (default one). */
 	multiple?: boolean;
@@ -171,11 +185,19 @@ export type AppArgs = {
 	selectors_at?: (typeof SELECTOR_PLACES)[number];
 	/** dashboard: text at the top of the sidebar. */
 	sidebar_title?: string;
+	/** dashboard: fields that mean the same thing in two layers under different names, for filtering across layers. */
+	links?: { from: string; to: string }[];
 	fields?: string[];
 	/** fieldmaps: groups, hints, required / read-only fields, show_when, photos. */
 	form?: FormSpec;
 	/** experience: the theme's primary colour (#rrggbb). */
 	theme_color?: string;
+	/** experience built from widgets: the header's colour (#rrggbb). */
+	header_color?: string;
+	/** exb_widget: the custom widget to write for Experience Builder Developer Edition. */
+	custom_widget?: { name: string; label?: string; description?: string; data?: "none" | "layer" | "map" | "layer_and_map"; author?: string };
+	/** exb_widget: the Developer Edition version (client/package.json's exb-client version); default 1.21.0. */
+	exb_version?: string;
 	redirect_uris?: string[];
 	questions?: { type: string; label: string; choices?: (string | { value: string; label: string; filter?: string })[]; required?: boolean;
 		hint?: string; name?: string; group?: string; relevant?: string; constraint?: string; constraint_message?: string; calculation?: string;
