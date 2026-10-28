@@ -1,6 +1,6 @@
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { autoWidgets, chartGuides, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
+import { autoWidgets, chartGuides, correspondingField, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
 import { gridLayout } from "../../src/tools/portal_app/exb-build";
 import { arcadeTest, filterSql } from "../../src/tools/portal_app/filters";
 import { formFor, inputFor } from "../../src/tools/portal_app/fieldmaps";
@@ -463,6 +463,19 @@ describe("portal_app: dashboards on several layers", () => {
 		expect(out.data_from).toEqual([{ layer: "sites", through: "the web map", widgets: 2, on_map: true },
 			{ layer: "governorates", through: "the web map", widgets: 2, on_map: true }]);
 		expect(byName("By status")).toBe(pie);
+	});
+
+	it("fields are shared across layers by their exact name, or by links in any case", () => {
+		const layer = (url: string, ...names: string[]) => ({ url, source: url, info: { fields: names.map((name) => ({ name })) }, mapId: url }) as any;
+		const parks = layer("https://x/parks/0", "AREA", "SUB_MUN");
+		const districts = layer("https://x/districts/0", "Area", "SUB_MUN", "Name");
+		expect(correspondingField(parks, "SUB_MUN", districts)).toBe("SUB_MUN");
+		// a district's Area is not a park's AREA
+		expect(correspondingField(parks, "AREA", districts)).toBeNull();
+		// ...unless links pair them, in any case
+		expect(correspondingField(parks, "AREA", districts, [{ from: "AREA", to: "Area" }])).toBe("Area");
+		expect(correspondingField(parks, "AREA", districts, [{ from: "area", to: "name" }])).toBe("Name");
+		expect(correspondingField(parks, "AREA", parks)).toBe("AREA");
 	});
 
 	it("without a shared field, other layers are not filtered and the selector says so; unknown links are refused", async () => {

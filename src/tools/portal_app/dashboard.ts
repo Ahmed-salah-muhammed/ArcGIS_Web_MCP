@@ -592,19 +592,21 @@ export type MapWiring = { widget: any; layers: { layer: Layer; id: string }[] };
 export type Links = { from: string; to: string }[];
 
 /**
- * The name `field` of layer `from` has in layer `to`: itself on the same layer, else a field of the same name (any
- * case) or one paired with it in links; null when `to` has none.
+ * The name `field` of layer `from` has in layer `to`: itself on the same layer, else one paired with it in links (any
+ * case), else a field of exactly the same name; null when `to` has none. Names differing only in case are not taken
+ * for the same field (a parks layer's AREA is not a district layer's Area): links pair them when they are.
  */
 export function correspondingField(from: Layer | undefined, field: string, to: Layer | undefined, links: Links = []): string | null {
 	if (!from || !to) return null;
 	if (keyOf(from) === keyOf(to)) return field;
-	const has = (name: string) => (to.info.fields ?? []).find((f: any) => String(f.name).toLowerCase() === name.toLowerCase())?.name ?? null;
+	const fields: string[] = (to.info.fields ?? []).map((f: any) => String(f.name));
+	const has = (name: string) => fields.find((f) => f.toLowerCase() === name.toLowerCase()) ?? null;
 	const lower = field.toLowerCase();
 	for (const l of links) {
 		if (l.from.toLowerCase() === lower && has(l.to)) return has(l.to);
 		if (l.to.toLowerCase() === lower && has(l.from)) return has(l.from);
 	}
-	return has(field);
+	return fields.includes(field) ? field : null;
 }
 
 /**
