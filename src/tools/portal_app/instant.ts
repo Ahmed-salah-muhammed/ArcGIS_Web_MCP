@@ -4,6 +4,9 @@
  * Mapping Application", the template's typeKeywords without "createAppWithoutMap", data {source: <template item>,
  * folderId, values: {webmap, title, type: "webmap", datePublished, ...settings}} and
  * url <org>/apps/instant/<name>/index.html?appid=<id>. Settings left out take the template's defaults.
+ * A template item's own data lists its settings (config: sections > subsections > groups > settings with an id and a
+ * defaultValue, read from the Basic template): action=templates with a template returns them, and create checks
+ * options against them (unknown names, and values of the wrong kind) before anything is made.
  */
 import { ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
@@ -38,6 +41,45 @@ export async function instantTemplates(ctx: Ctx, self?: any): Promise<InstantTem
 	}));
 }
 
+export type InstantSetting = { id: string; default: unknown; section: string };
+
+/** The settings a template's data lists, depth first, with the section each sits in. */
+export function settingsOf(data: any): InstantSetting[] {
+	const out: InstantSetting[] = [];
+	const walk = (nodes: any[], section: string) => {
+		for (const n of nodes ?? []) {
+			const where = n.type === "section" ? n.id : section;
+			if (n.type === "setting" && n.id) out.push({ id: n.id, default: n.defaultValue ?? null, section: where });
+			if (Array.isArray(n.content)) walk(n.content, where);
+		}
+	};
+	walk(Array.isArray(data?.config) ? data.config : [], "");
+	return out;
+}
+
+export async function templateSettings(ctx: Ctx, tpl: InstantTemplate): Promise<InstantSetting[]> {
+	const data = await ctx.request(`${base(ctx)}/content/items/${tpl.id}/data`).catch(() => null);
+	return settingsOf(data);
+}
+
+/** options checked against the template's settings: known names, and booleans / numbers / text where the default is one. */
+export function checkOptions(options: Record<string, unknown>, settings: InstantSetting[], template: string) {
+	if (!settings.length) return;
+	const byId = new Map(settings.map((st) => [st.id, st]));
+	const unknown = Object.keys(options).filter((k) => !byId.has(k));
+	if (unknown.length) {
+		throw new ArcGISError(`The ${template} template has no setting ${unknown.map((k) => `'${k}'`).join(", ")}. `
+			+ `Its settings: ${settings.map((st) => st.id).join(", ")}`, "bad_argument");
+	}
+	for (const [k, v] of Object.entries(options)) {
+		const d = byId.get(k)!.default;
+		const kind = (x: unknown) => (x === null ? "null" : Array.isArray(x) ? "array" : typeof x);
+		if (d !== null && v !== null && ["boolean", "number", "string"].includes(kind(d)) && kind(v) !== kind(d)) {
+			throw new ArcGISError(`'${k}' takes a ${kind(d)} (default ${JSON.stringify(d)}), not ${JSON.stringify(v)}.`, "bad_argument");
+		}
+	}
+}
+
 export async function createInstant(ctx: Ctx, args: AppArgs) {
 	const map = await requireItemOfType(ctx, args.webmap_id, ["Web Map"], "webmap_id (the web map the app shows)");
 	const self = await portalSelf(ctx);
@@ -48,9 +90,14 @@ export async function createInstant(ctx: Ctx, args: AppArgs) {
 		throw new ArcGISError(`No Instant Apps template '${args.template}'. Available: ${templates.map((t) => t.name).join(", ")}`,
 			"not_found");
 	}
+	const settings = await templateSettings(ctx, tpl);
+	const options = { ...(args.options ?? {}) };
+	// theme = light | dark, when the template has the setting
+	if (args.theme && settings.some((st) => st.id === "theme") && options.theme === undefined) options.theme = args.theme;
+	checkOptions(options, settings, tpl.name);
 	const title = args.title ?? `${map.title} (${tpl.title})`;
 	const keywords = tpl.typeKeywords.filter((k) => k !== "createAppWithoutMap" && !k.startsWith("InstantAppGallery:"));
-	const values = { ...(args.options ?? {}), webmap: map.id, title, type: "webmap", datePublished: Date.now() };
+	const values = { ...options, webmap: map.id, title, type: "webmap", datePublished: Date.now() };
 	const { id, folderId } = await addItem(ctx, args.folder, {
 		type: "Web Mapping Application", title, tags: (args.tags ?? ["arcgis-web-mcp", "Instant Apps"]).join(","),
 		snippet: args.summary ?? `${tpl.title} app of ${map.title}`, typeKeywords: keywords.join(","),
@@ -61,6 +108,7 @@ export async function createInstant(ctx: Ctx, args: AppArgs) {
 		await updateItem(ctx, id, { url, text: JSON.stringify({ source: tpl.id, folderId, values }) });
 		const item = await ctx.request(`${base(ctx)}/content/items/${id}`);
 		return { app: itemCard(item, ctx.props.portal), open: url, template: { name: tpl.name, title: tpl.title, id: tpl.id },
+			settings_set: Object.keys(options), settings_checked: settings.length > 0,
 			next: "Change its settings from the item page (Configure)." };
 	});
 }

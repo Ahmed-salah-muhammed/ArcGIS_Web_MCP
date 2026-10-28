@@ -6,7 +6,7 @@ import { createDashboard, WIDGET_HELP } from "./dashboard";
 import { registerExbDeveloper } from "./developer";
 import { createExperience, experienceTemplates } from "./experience";
 import { prepareFieldMaps } from "./fieldmaps";
-import { createInstant, instantTemplates } from "./instant";
+import { createInstant, instantTemplates, templateSettings } from "./instant";
 import { BLOCK_HELP, createStorymap, STORY_THEMES } from "./storymap";
 import { createSurvey } from "../portal_survey123/draft";
 import { APP_KINDS, type AppArgs } from "./types";
@@ -18,7 +18,14 @@ export async function app(ctx: Ctx, args: AppArgs) {
 	const kind = args.kind;
 	if (!kind || !APP_KINDS.includes(kind)) throw new ArcGISError(`kind must be one of: ${APP_KINDS.join(", ")}.`, "bad_argument");
 	if ((args.action ?? "create") === "templates") {
-		if (kind === "instant") return { kind, templates: (await instantTemplates(ctx)).map(({ typeKeywords: _, ...t }) => t) };
+		if (kind === "instant") {
+			const list = (await instantTemplates(ctx)).map(({ typeKeywords: _, ...t }) => t);
+			if (!args.template) return { kind, templates: list, settings: "Give template to list that template's settings (the options create takes)." };
+			const wanted = args.template.toLowerCase().trim();
+			const tpl = list.find((t) => t.id === wanted || t.name === wanted || t.title.toLowerCase() === wanted);
+			if (!tpl) throw new ArcGISError(`No Instant Apps template '${args.template}'. Available: ${list.map((t) => t.name).join(", ")}`, "not_found");
+			return { kind, template: tpl, settings: await templateSettings(ctx, { ...tpl, typeKeywords: [] }) };
+		}
 		if (kind === "experience") return { kind, templates: experienceTemplates() };
 		if (kind === "storymap") return { kind, themes: STORY_THEMES, blocks: BLOCK_HELP };
 		if (kind === "dashboard") return { kind, widgets: WIDGET_HELP };

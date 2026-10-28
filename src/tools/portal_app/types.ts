@@ -89,6 +89,18 @@ export type SelectorSpec = {
 
 export type Section = { heading?: string; text?: string; webmap_id?: string };
 
+/** fieldmaps: how the forms look and behave, by field name (on every layer that has the field). */
+export type FormSpec = {
+	groups?: { label: string; fields: string[]; collapsed?: boolean }[];
+	hints?: Record<string, string>;
+	required?: string[];
+	read_only?: string[];
+	/** FIELD shows only when the other fields meet these conditions (all of them). */
+	show_when?: Record<string, Record<string, Condition>>;
+	/** A photo element (layers with attachments); a string is its label. */
+	photos?: boolean | string;
+};
+
 export const STORY_BLOCKS = ["heading", "text", "quote", "bullets", "numbered", "image", "map", "embed", "video", "button", "separator",
 	"number", "swipe", "sidecar", "timeline"] as const;
 /** What a slide, a swipe side or a cover shows: a web map, an image (https), or a page (url). */
@@ -160,6 +172,10 @@ export type AppArgs = {
 	/** dashboard: text at the top of the sidebar. */
 	sidebar_title?: string;
 	fields?: string[];
+	/** fieldmaps: groups, hints, required / read-only fields, show_when, photos. */
+	form?: FormSpec;
+	/** experience: the theme's primary colour (#rrggbb). */
+	theme_color?: string;
 	redirect_uris?: string[];
 	questions?: { type: string; label: string; choices?: (string | { value: string; label: string; filter?: string })[]; required?: boolean;
 		hint?: string; name?: string; group?: string; relevant?: string; constraint?: string; constraint_message?: string; calculation?: string;

@@ -107,7 +107,7 @@ export async function arcade(ctx: Ctx, args: ArcadeArgs) {
 		if (!(role in FORM_ROLES)) throw new ArcGISError(`role must be ${Object.keys(FORM_ROLES).join(" | ")}.`, "bad_argument");
 		if (!args.field) throw new ArcGISError("field (the form field the expression is for) is required.", "bad_argument");
 		const check = requireValid(args.expression, "form", fields);
-		op.formInfo ??= formFor(op.title, info);
+		op.formInfo ??= formFor(op.title, info).form;
 		const element = (op.formInfo.formElements ?? []).flatMap((e: any) => (e.type === "group" ? e.formElements ?? [] : [e]))
 			.find((e: any) => e.fieldName?.toLowerCase() === args.field!.toLowerCase());
 		if (!element) throw new ArcGISError(`The form has no field '${args.field}'.`, "not_found");

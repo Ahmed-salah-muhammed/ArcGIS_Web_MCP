@@ -17,7 +17,8 @@ export const tool = defineTool({
 	name: "portal_app",
 	title: "Apps from your content",
 	description: "Build apps from your maps and layers. action=templates lists a kind's templates; action=create (default) builds one: "
-		+ "instant (webmap_id + template, default basic; options = app settings) | "
+		+ "instant (webmap_id + template, default basic; options = the template's settings, checked: action=templates with template "
+		+ "lists them; theme light|dark) | "
 		+ "dashboard (target = feature layer item id and/or webmap_id; widgets = [{type: map|indicator|gauge|pie|bar|line|list|table|details|"
 		+ "legend|text|embed, field, value_field, statistic, fields, title, text, url (https page or image), filter {FIELD: value | [values] | "
 		+ "{op: =|!=|>|>=|<=|in|not_in|not_null|last|before_last|this_year|last_year, value, unit hour|day|month|year}}, column left|center|right, "
@@ -33,7 +34,7 @@ export const tool = defineTool({
 		+ "table filters the other widgets and the map and zooms to it, selecting on the map filters them), extent_filter (default true: "
 		+ "moving the map filters them); style classic|executive (dark panels with icons, donuts with outside labels, smooth area "
 		+ "lines; navy theme); theme light|dark|navy; subtitle; logo_url) | "
-		+ "experience (Experience Builder: template name, webmap_id bound to its maps; publish default true) | "
+		+ "experience (Experience Builder: template name, webmap_id bound to its maps, theme_color #rrggbb; publish default true) | "
 		+ "storymap (blocks = [{type: heading (level 2-4)|text|quote|bullets|numbered (items)|image (url, size, link)|map (webmap_id, size)|"
 		+ "embed (url, display card|inline)|video (url)|button (text, url)|separator|number (value, text)|swipe (left/right: two webmap_id or "
 		+ "two image)|sidecar (style docked|floating|slideshow, slides [{heading, text, webmap_id|image|url}])|timeline (style waterfall|"
@@ -43,7 +44,9 @@ export const tool = defineTool({
 		+ "survey (Survey123 draft that opens in the web designer, where Publish creates its layer; questions = [{type: "
 		+ "text|textarea|number|integer|date|datetime|single|dropdown|multi|email|image|note|geopoint, label, choices, required}], "
 		+ "or target = a layer whose fields become the questions, or a default set) | "
-		+ "fieldmaps (webmap_id: forms for its editable layers from their fields, fields = which, options.offline, options.overwrite_forms) | "
+		+ "fieldmaps (webmap_id: forms for its editable layers from their fields, fields = which, form = {groups [{label, fields, "
+		+ "collapsed}], hints {FIELD: text}, required [FIELD], read_only [FIELD], show_when {FIELD: {OTHER: condition}}, photos true|label}, "
+		+ "options.offline, options.overwrite_forms) | "
 		+ "exb_developer (registers Experience Builder Developer Edition; returns the client ID and the steps). "
 		+ "Returns the new item and the link to open it.",
 	schema: z.object({
@@ -143,6 +146,16 @@ export const tool = defineTool({
 		theme: z.string().optional(),
 		publish: z.boolean().optional(),
 		fields: z.array(z.string()).optional().describe("fieldmaps: the fields in the form, in order"),
+		form: z.object({
+			groups: z.array(z.object({ label: z.string().max(100), fields: z.array(z.string()).min(1), collapsed: z.boolean().optional() }))
+				.max(20).optional(),
+			hints: z.record(z.string(), z.string().max(300)).optional(),
+			required: z.array(z.string()).optional(),
+			read_only: z.array(z.string()).optional(),
+			show_when: z.record(z.string(), conditions).optional().describe('{"REASON_OTHER": {"REASON": "Other"}}'),
+			photos: z.union([z.boolean(), z.string().max(60)]).optional().describe("a photo element (layers with attachments)"),
+		}).optional().describe("fieldmaps: how the forms look and behave"),
+		theme_color: z.string().optional().describe("experience: the theme's primary colour #rrggbb"),
 		redirect_uris: z.array(z.string()).optional().describe("exb_developer: default https://localhost:3001/"),
 		questions: z.array(z.object({
 			type: z.enum(QUESTION_TYPES),

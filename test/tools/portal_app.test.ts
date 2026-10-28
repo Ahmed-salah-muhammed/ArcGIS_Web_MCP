@@ -58,6 +58,26 @@ describe("portal_app: Instant Apps", () => {
 		expect(out).toMatchObject({ kind: "instant", open: upd.url, template: { name: "sidebar" } });
 	});
 
+	it("the template's settings are listed and options are checked against them", async () => {
+		silence();
+		const tplData = () => ({ config: [{ type: "section", id: "about", content: [{ type: "setting", id: "header", defaultValue: false,
+			content: [{ type: "setting", id: "title", defaultValue: "" }] }, { type: "group", id: "g", content: [{ type: "setting", id: "legend",
+				defaultValue: true }] }] }, { type: "section", id: "themeLayout", content: [{ type: "setting", id: "theme", defaultValue: "light" }] }] });
+		const { ctx, calls } = fakeCtx(common({ "/community/groups": () => ({ results: [{ id: "g1" }] }), "/search": templates,
+			[`/content/items/${TPL}/data`]: tplData }));
+		const listed: any = await app(ctx, { action: "templates", kind: "instant", template: "sidebar" });
+		expect(listed.settings).toEqual([{ id: "header", default: false, section: "about" }, { id: "title", default: "", section: "about" },
+			{ id: "legend", default: true, section: "about" }, { id: "theme", default: "light", section: "themeLayout" }]);
+		await expect(app(ctx, { kind: "instant", webmap_id: MAP, template: "sidebar", options: { legnd: true } }))
+			.rejects.toThrow(/no setting 'legnd'. Its settings: header, title, legend, theme/);
+		await expect(app(ctx, { kind: "instant", webmap_id: MAP, template: "sidebar", options: { legend: "yes" } }))
+			.rejects.toThrow(/'legend' takes a boolean/);
+		expect(sent(calls, "/addItem")).toHaveLength(0);
+		const out: any = await app(ctx, { kind: "instant", webmap_id: MAP, template: "sidebar", theme: "dark", options: { header: true } });
+		expect(json(sent(calls, `/items/${NEW}/update`)[0].params.text).values).toMatchObject({ header: true, theme: "dark" });
+		expect(out).toMatchObject({ settings_set: ["header", "theme"], settings_checked: true });
+	});
+
 	it("an unknown template or a non-map item fails before anything is created", async () => {
 		const { ctx, calls } = fakeCtx(common({ "/community/groups": () => ({ results: [{ id: "g1" }] }), "/search": templates,
 			[`/content/items/${ID}`]: () => ({ id: ID, type: "Feature Service" }) }));
@@ -520,6 +540,15 @@ describe("portal_app: Experience Builder", () => {
 		expect(out.edit).toBe(`https://experience.arcgis.com/builder/?id=${NEW}`);
 	});
 
+	it("theme_color sets the theme's primary colour", async () => {
+		silence();
+		const { ctx, calls } = fakeCtx(common({ "/billboard/config.json": template }));
+		const out: any = await app(ctx, { kind: "experience", theme_color: "#1A4780" });
+		expect(json(sent(calls, "/addResources")[0].params.text).customTheme).toEqual({ colors: { primary: "#1a4780" } });
+		expect(out.theme_color).toBe("#1a4780");
+		await expect(app(ctx, { kind: "experience", theme_color: "navy" })).rejects.toThrow(/#rrggbb/);
+	});
+
 	it("a step that fails removes the half-made item", async () => {
 		const { ctx, calls } = fakeCtx(common({ "/billboard/config.json": template,
 			[`${USER}/items/${NEW}/addResources`]: () => { throw new Error("resource refused"); } }));
@@ -723,7 +752,7 @@ describe("portal_app: Field Maps", () => {
 		expect(inputFor(poles.fields[1]).type).toBe("combo-box");
 		expect(inputFor(poles.fields[2])).toEqual({ type: "datetime-picker", includeTime: true });
 		expect(inputFor(poles.fields[3]).type).toBe("text-area");
-		const form = formFor("Poles", poles, ["height", "type"]);
+		const { form } = formFor("Poles", poles, ["height", "type"]);
 		expect(form.formElements.map((e: any) => e.fieldName)).toEqual(["HEIGHT", "TYPE"]);
 		expect(form.formElements[0]).toMatchObject({ requiredExpression: "expr/system/true", editableExpression: "expr/system/true" });
 	});
@@ -742,6 +771,34 @@ describe("portal_app: Field Maps", () => {
 		expect(saved.operationalLayers[1].formInfo).toEqual({ title: "mine" });
 		expect(out.offline).toBe(false);
 		expect(out.open_in_field_maps).toBe(`https://fieldmaps.arcgis.app/?portalURL=${encodeURIComponent("https://acme.maps.arcgis.com")}&referenceContext=open&itemID=${MAP}`);
+	});
+
+	it("form: groups, hints, required and read-only fields, show_when as Arcade, a photo element", async () => {
+		silence();
+		const data = { operationalLayers: [{ id: "a", title: "Poles", url: `${SVC}/0` }] };
+		const { ctx, calls } = fakeCtx(common({ [`/content/items/${MAP}/data`]: () => data, [`${SVC}/0`]: () => ({ ...poles, hasAttachments: true }),
+			[`${USER}/items/${MAP}/update`]: () => ({ success: true }) }));
+		const out: any = await app(ctx, { kind: "fieldmaps", webmap_id: MAP, form: { groups: [{ label: "Details", fields: ["note", "HEIGHT"], collapsed: true }],
+			hints: { TYPE: "What the pole is made of" }, required: ["installed"], read_only: ["HEIGHT"], show_when: { NOTE: { TYPE: "Wood", HEIGHT: { op: ">", value: 5 } } },
+			photos: "Pole photos" } });
+		const form = json(sent(calls, `/items/${MAP}/update`)[0].params.text).operationalLayers[0].formInfo;
+		expect(form.supportsAttachmentElements).toBe(true);
+		const [type, installed, group, photos] = form.formElements;
+		expect(type).toMatchObject({ fieldName: "TYPE", description: "What the pole is made of" });
+		expect(installed).toMatchObject({ fieldName: "INSTALLED", requiredExpression: "expr/system/true" });
+		expect(group).toMatchObject({ type: "group", label: "Details", initialState: "collapsed" });
+		const [note, height] = group.formElements;
+		expect(note.visibilityExpression).toBe("expr/show-1");
+		expect(form.expressionInfos).toContainEqual({ expression: '$feature["TYPE"] == "W" && $feature["HEIGHT"] > 5', name: "expr/show-1",
+			returnType: "boolean", title: "Show NOTE" });
+		// read-only wins over the layer's not-null
+		expect(height).toMatchObject({ fieldName: "HEIGHT", editableExpression: "expr/system/false" });
+		expect(height.requiredExpression).toBeUndefined();
+		expect(photos).toEqual({ type: "attachment", label: "Pole photos", attachmentKeyword: "photos", allowUserRename: true, displayFilename: false,
+			editableExpression: "expr/system/true", inputType: { type: "image", inputMethod: "any", maxImageSize: 1280 }, useOriginalFilename: true });
+		expect(out.layers[0]).toMatchObject({ groups: ["Details"], photos: true, fields: ["TYPE", "INSTALLED", "NOTE", "HEIGHT"] });
+		await expect(app(ctx, { kind: "fieldmaps", webmap_id: MAP, options: { overwrite_forms: true }, form: { required: ["NOPE"] } }))
+			.rejects.toThrow(/no editable field 'NOPE'/);
 	});
 });
 
