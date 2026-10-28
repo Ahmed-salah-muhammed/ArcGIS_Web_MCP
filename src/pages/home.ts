@@ -5,6 +5,7 @@
  * contact form posts JSON to /contact on this same origin (src/contact.ts).
  */
 import { CONTACT_LIMITS, TOPICS } from "../contact";
+import { APP_ICONS } from "./app-icons";
 import { ARROW, avatarHtml, esc, FAVICON } from "./credit";
 import { CATEGORIES, TOOL_DOCS, type ToolDoc } from "./docs";
 import { type Author, VERSION } from "./identity";
@@ -35,7 +36,11 @@ const PATHS: Record<string, string> = {
 	sparkle: '<path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9z"/><path d="M19 17v4M17 19h4"/>',
 	server: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
 	briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
-	reply: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v5"/>',
+	book: '<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 21.5A2.5 2.5 0 0 1 6.5 19H20v3H6.5"/>',
+	clipboard: '<rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 4V2.5h6V4M9 11h6M9 15h6"/>',
+	pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+	code: '<path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/>',
+	whatsapp: '<path d="M3.5 20.5 5 16a8.5 8.5 0 1 1 3.2 3.1z"/><path d="M9.2 8.6c.2-.5.5-.6.8-.6h.6c.2 0 .4.1.5.4l.7 1.6c.1.3 0 .5-.1.7l-.5.6c.6 1.2 1.6 2.1 2.8 2.7l.6-.5c.2-.2.5-.2.7-.1l1.6.7c.3.1.4.3.4.6v.6c0 .4-.2.7-.6.8-2.6 1-7.3-3.6-6.5-6.5z"/>',
 };
 
 const TOPIC_ICONS: Record<string, string> = {
@@ -64,7 +69,7 @@ function overview(url: string, toolCount: number) {
 	const cards = [
 		["search", "blue", "Find & read", "Search your organization, read items, query layers, count and summarize.", "#tools"],
 		["layers", "green", "Publish & edit", "Turn CSV or GeoJSON into hosted layers, edit features, add fields and styles.", "#tools"],
-		["map", "orange", "Maps & sharing", "Build web maps from your layers and share them with your groups.", "#tools"],
+		["map", "orange", "Maps & apps", "Web maps, dashboards, Instant Apps, StoryMaps, Experience Builder, Survey123 and Field Maps.", "#apps"],
 	].map(([ic, color, title, text, href]) => `<a class="feature" href="${href}"><div class="feature-art ${color}">${icon(ic, 34)}</div>
     <div class="feature-body"><h3>${title}</h3><p>${text}</p></div></a>`).join("");
 	const steps = [
@@ -137,6 +142,42 @@ function tools(byCategory: Map<string, ToolDoc[]>) {
   <div class="groups">${groups}</div>`);
 }
 
+const APPS = [
+	["zap", "instant", "Instant Apps", "A ready app of a web map from any template in your org's gallery: Basic, Sidebar, Exhibit and more.",
+		"Create a Sidebar Instant App of my parks map."],
+	["gauge", "dashboard", "Dashboards", "Indicators, pie, bar and line charts, list, table, map, legend and details from a layer, or chosen for you.",
+		"Make a dashboard of the inspections with a count, a pie by status and a table."],
+	["grid", "experience", "Experience Builder", "An app from one of 50 Experience Builder templates, with your web map in its maps.",
+		"Build an Experience Builder app of the flood map with the billboard template."],
+	["book", "storymap", "StoryMaps", "A story with a cover, headings, text and maps, in one of six themes.",
+		"Write a short story about the river project with the flood map in the middle."],
+	["clipboard", "survey", "Survey123", "In the browser (a draft for the web designer) or with Survey123 Connect (an XLSForm Excel file), with portal_survey123.",
+		"Make a Site inspection survey with a condition question and a photo."],
+	["pin", "fieldmaps", "Field Maps", "A web map ready for the field: forms from the layers' fields, Arcade rules, offline.",
+		"Prepare my assets map for Field Maps with a form for the poles layer."],
+	["code", "exb_developer", "Experience Builder Developer Edition", "Registers the app and gives you its client ID and the setup steps.",
+		"Set me up for Experience Builder Developer Edition."],
+];
+
+function apps() {
+	const logo = (kind: string, ic: string) => {
+		const src = APP_ICONS[kind === "exb_developer" ? "experience" : kind];
+		if (!src) return `<span class="tile-ic">${icon(ic, 20)}</span>`;
+		return `<span class="app-logo"><img src="${src}" alt="" width="40" height="40">${kind === "exb_developer" ? `<i>${icon("code", 11)}</i>` : ""}</span>`;
+	};
+	const cards = APPS.map(([ic, kind, name, what, ask]) => `<div class="app-card"><div class="app-head">${logo(kind, ic)}
+    <div><h3>${name}</h3><code>kind=${kind}</code></div></div><p>${what}</p>
+    <div class="prompt">${icon("chat", 16)}<span>${esc(ask)}</span></div></div>`).join("");
+	return page("apps", "Apps & maps", "Build apps", `
+  <p class="lead">From a web map or a layer to a finished app in one request, with <a class="inline" href="#t-portal_app">portal_app</a>.
+  Each app is created private in your content, with the link to open it.</p>
+  <div class="apps">${cards}</div>
+  <h2 id="apps-flow">A typical flow</h2>
+  <ol class="list"><li>Publish your data (<code>portal_publish</code>) or find a layer (<code>portal_search</code>).</li>
+    <li>Make a web map (<code>portal_map</code>) and add Arcade popups or labels (<code>portal_arcade</code>).</li>
+    <li>Build the app (<code>portal_app</code>), then share it (<code>portal_share</code>).</li></ol>`);
+}
+
 function toolPage(t: ToolDoc) {
 	const cat = CATEGORIES.find((c) => c.id === t.category)!;
 	const rows = (list: { name: string; does: string; confirm?: string }[], head: string) => `<table class="table">
@@ -197,15 +238,18 @@ function about(author: Author | null) {
 
 function contact(author: Author | null) {
 	const L = CONTACT_LIMITS;
-	const items = [
-		["mail", "Straight to my inbox", "Your message arrives by email, and the answer comes to the address you give."],
-		["bug", "Reporting a problem?", "Include the tool, what you asked and the error text. Never paste a token or a password."],
-		["reply", "Bigger work", "ArcGIS, WebGIS and full-stack projects, or an MCP for your own organization."],
-	].map(([ic, t, d]) => `<div class="contact-item"><span class="tile-ic">${icon(ic, 19)}</span><div><b>${t}</b><p>${d}</p></div></div>`).join("");
 	const me = author ? `<div class="contact-me">${avatarHtml(author, "me-photo", 52)}<div><b>${esc(author.name)}</b>
     <small>${esc(author.title ?? "Developer")}</small></div></div>` : "";
+	const email = author?.email ? `<a class="contact-item link" href="mailto:${esc(author.email)}"><span class="tile-ic">${icon("mail", 19)}</span>
+    <div><small>Email</small><b>${esc(author.email)}</b></div></a>` : "";
+	const wa = author?.whatsapp ? `<a class="whatsapp" href="https://wa.me/${author.whatsapp.replace(/\D/g, "")}" target="_blank"
+    rel="noopener noreferrer"><span class="wa-ic">${icon("whatsapp", 20)}</span><div><b>Chat on WhatsApp</b>
+    <small>${esc(author.whatsapp)}</small></div><span class="wa-go">Open chat ${ARROW}</span></a>` : "";
+	const tip = `<div class="contact-item"><span class="tile-ic">${icon("bug", 19)}</span><div><b>Reporting a problem?</b>
+    <p>Include the tool, what you asked and the error text. Never paste a token or a password.</p></div></div>`;
 	const portfolio = author?.url
 		? `<a class="btn" href="${esc(author.url)}" target="_blank" rel="noopener noreferrer">Portfolio ${ARROW}</a>` : "";
+	const items = email + wa + tip;
 	const topics = TOPICS.map((t) => `<button type="button" class="topic" data-topic="${esc(t)}" aria-pressed="false">`
 		+ `${icon(TOPIC_ICONS[t] ?? "chat", 14)}${esc(t)}</button>`).join("");
 	return page("contact", "Contact", "Contact us", `
@@ -243,7 +287,7 @@ function sidebar(byCategory: Map<string, ToolDoc[]>, author: Author | null) {
 	return `<aside class="side" id="side">
   <nav>
     <p class="label">Get started</p>${link("overview", "home", "Overview")}${link("connect", "plug", "Connect")}
-    <p class="label">Tools</p>${link("tools", "grid", "Tools reference")}${groups}
+    <p class="label">Tools</p>${link("tools", "grid", "Tools reference")}${link("apps", "sparkle", "Build apps")}${groups}
     <p class="label">Guides</p>${link("security", "shield", "Security")}${link("limits", "gauge", "Limits")}${link("contact", "mail", "Contact us")}
   </nav>
   <div class="side-foot">${me}</div>
@@ -398,13 +442,34 @@ const CSS = `
   .person-photo { width: 112px; height: 112px; border-radius: 50%; object-fit: cover; flex: none; box-shadow: 0 0 0 3px #2a2a2a;
     display: grid; place-items: center; font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, #007ac2, #35ac46); }
   .person-role { margin: 0 0 .5rem; color: var(--blue); font-weight: 600; }
-  .contact { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 1rem; align-items: start; max-width: 1000px; }
+  .apps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .9rem; }
+  .app-card { display: flex; flex-direction: column; gap: .6rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1rem; }
+  .app-head { display: flex; align-items: center; gap: .7rem; } .app-head .tile-ic { margin: 0; flex: none; }
+  .app-head h3 { margin: 0; font-size: .98rem; } .app-head code { font-size: .74rem; }
+  .app-logo { position: relative; flex: none; width: 40px; height: 40px; } .app-logo img { display: block; width: 40px; height: 40px; }
+  .app-logo i { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 18px; height: 18px;
+    border-radius: 50%; background: #0b0b0b; border: 1px solid var(--line-2); color: #fff; }
+  .app-card > p { margin: 0; font-size: .86rem; color: var(--muted); flex: 1; }
+  .app-card .prompt { padding: .5rem .7rem; font-size: .82rem; background: #161616; }
+  a.inline { color: var(--blue); font-weight: 600; }
+  .contact { display: grid; grid-template-columns: minmax(0, 370px) minmax(0, 1fr); gap: 1rem; align-items: start; max-width: 1060px; }
   .contact-side, .contact-form { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 1.15rem 1.25rem; }
   .contact-side { display: grid; gap: 1rem; justify-items: start; }
   .contact-me { display: flex; align-items: center; gap: .8rem; width: 100%; padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
   .contact-me .me-photo { width: 52px; height: 52px; }
   .contact-me b { display: block; font-size: .95rem; } .contact-me small { color: var(--muted); font-size: .8rem; }
-  .contact-item { display: flex; gap: .8rem; } .contact-item .tile-ic { margin: 0; flex: none; }
+  .contact-item { display: flex; align-items: flex-start; gap: .8rem; min-width: 0; } .contact-item .tile-ic { margin: 0; flex: none; }
+  .contact-item.link { align-items: center; } .contact-item small { display: block; font-size: .78rem; color: var(--muted); }
+  .contact-item.link b { overflow-wrap: anywhere; } .contact-item.link:hover b { color: var(--blue); }
+  .whatsapp { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem .75rem; width: 100%; padding: .75rem .8rem; border-radius: 12px;
+    border: 1px solid rgba(34,197,94,.35); background: rgba(34,197,94,.07); }
+  .whatsapp:hover { border-color: var(--green); }
+  .wa-ic { display: inline-grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 10px;
+    background: rgba(34,197,94,.15); color: var(--green); }
+  .whatsapp div { min-width: 0; } .whatsapp b { display: block; font-size: .9rem; white-space: nowrap; }
+  .whatsapp small { display: block; font-size: .8rem; color: var(--muted); white-space: nowrap; }
+  .wa-go { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: .3rem; font-size: .78rem; font-weight: 700;
+    color: var(--green); border: 1px solid rgba(34,197,94,.35); border-radius: 999px; padding: .25rem .65rem; white-space: nowrap; }
   .contact-item b { font-size: .9rem; } .contact-item p { margin: .1rem 0 0; font-size: .83rem; color: var(--muted); line-height: 1.5; }
   .contact-form h2 { margin: 0 0 .15rem; font-size: 1.3rem; }
   .contact-form > p { margin: 0 0 .9rem; color: var(--muted); font-size: .9rem; }
@@ -425,7 +490,8 @@ const CSS = `
   .form-status { margin: 0; font-size: .88rem; } .form-status.good { color: var(--green); } .form-status.bad { color: #f87171; }
   .btn:disabled { opacity: .6; cursor: progress; }
   @media (max-width: 1180px) { .panel { grid-template-columns: minmax(0, 1fr); } .toc { display: none; }
-    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .groups { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .groups, .apps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .contact { grid-template-columns: minmax(0, 1fr); max-width: 760px; } }
   @media (max-width: 900px) {
     .top nav a { display: none; } .burger { display: inline-flex; } .body { grid-template-columns: minmax(0, 1fr); }
     .top { gap: .7rem; padding: 0 1rem; } .top nav .btn { margin-left: 0; padding: .5rem .6rem; } .top nav .btn span { display: none; }
@@ -433,10 +499,10 @@ const CSS = `
       transform: translateX(-100%); transition: transform .2s; }
     .side.open { transform: none; box-shadow: 0 0 0 100vmax rgba(0,0,0,.55); }
     .main { padding: 0 .6rem .6rem; } .content { padding: 1.6rem 1.25rem 2rem; }
-    .steps, .contact { grid-template-columns: minmax(0, 1fr); } }
+    .steps { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 640px) {
     .main { padding: 0 .5rem .5rem; } .content { padding: 1.4rem 1rem 2rem; } .lead { font-size: 1rem; }
-    .features, .tiles, .groups, .fields { grid-template-columns: minmax(0, 1fr); } .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .features, .tiles, .groups, .fields, .apps { grid-template-columns: minmax(0, 1fr); } .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .person { flex-direction: column; align-items: flex-start; padding: 1.1rem; }
     .endpoint { display: grid; grid-template-columns: minmax(0, 1fr); gap: .45rem; padding: .8rem; }
     .endpoint code { white-space: normal; word-break: break-all; padding: 0; } .endpoint .btn { justify-content: center; }
@@ -584,6 +650,7 @@ export function homePage(origin: string, author: Author | null): string {
           ${overview(url, TOOL_DOCS.length)}
           ${connect(url)}
           ${tools(byCategory)}
+          ${apps()}
           ${TOOL_DOCS.map(toolPage).join("\n")}
           ${security()}
           ${limits()}

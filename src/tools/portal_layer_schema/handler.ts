@@ -6,6 +6,7 @@
  */
 import { adminUrl, ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
+import { labelClass } from "../shared/labels";
 import { base, isHosted, resolveLayerUrl, serviceOf } from "../shared/lookup";
 import { buildRenderer } from "../shared/renderer";
 import { audit, requireConfirm } from "../shared/safety";
@@ -122,14 +123,7 @@ export async function schema(ctx: Ctx, args: SchemaArgs) {
 			if (!args.label_field && !args.label_expression) {
 				throw new ArcGISError("label_field or label_expression (Arcade) is required.", "bad_argument");
 			}
-			drawing.labelingInfo = [{
-				labelExpressionInfo: { expression: args.label_expression ?? `$feature.${args.label_field}` },
-				symbol: { type: "esriTS", color: [0, 0, 0, 255], haloColor: [255, 255, 255, 255], haloSize: 1,
-					font: { size: 10, family: "Arial" } },
-				labelPlacement: props.geometryType === "esriGeometryPolyline" ? "esriServerLinePlacementAboveAlong"
-					: props.geometryType === "esriGeometryPolygon" ? "esriServerPolygonPlacementAlwaysHorizontal"
-						: "esriServerPointLabelPlacementAboveRight",
-			}];
+			drawing.labelingInfo = [labelClass(props.geometryType, args.label_expression ?? `$feature.${args.label_field}`)];
 			drawing.showLabels = true;
 		}
 		await ctx.request(`${adminUrl(url)}/updateDefinition`, { updateDefinition: { drawingInfo: drawing } });

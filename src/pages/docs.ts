@@ -20,7 +20,7 @@ export const CATEGORIES: Category[] = [
 	{ id: "read", name: "Find & read", summary: "Who you are, and what is in your organization.", icon: "search", color: "blue" },
 	{ id: "content", name: "Content", summary: "Items, folders, sharing and groups.", icon: "folder", color: "orange" },
 	{ id: "data", name: "Data", summary: "Publish layers, query them, edit them, shape them.", icon: "layers", color: "green" },
-	{ id: "maps", name: "Maps", summary: "Web maps built and styled from your layers.", icon: "map", color: "blue" },
+	{ id: "apps", name: "Apps & maps", summary: "Web maps, Arcade, and the apps built on them.", icon: "map", color: "blue" },
 	{ id: "power", name: "Power tools", summary: "Raw REST and several calls in one request.", icon: "bolt", color: "orange" },
 ];
 
@@ -142,7 +142,7 @@ export const TOOL_DOCS: ToolDoc[] = [
 		examples: ["Color the parcels by land use.", "Create a view of the schools with more than 500 students."],
 	},
 	{
-		name: "portal_map", category: "maps",
+		name: "portal_map", category: "apps",
 		summary: "Build and edit web maps from your layers, with popups, styles, filters and a basemap from your organization.",
 		actions: [
 			{ name: "create", does: "A web map from item ids or layer URLs, on your organization's basemap" },
@@ -155,6 +155,57 @@ export const TOOL_DOCS: ToolDoc[] = [
 			{ name: "basemap", does: "Any basemap of your organization's gallery" },
 		],
 		examples: ["Make a web map of the schools on the gray basemap with popups for NAME and STUDENTS."],
+	},
+	{
+		name: "portal_arcade", category: "apps",
+		summary: "Arcade, ArcGIS's expression language: ready-made expressions, a check against the layer's real fields, and saving them into a web map's popups, labels and Field Maps forms.",
+		actions: [
+			{ name: "templates", does: "Ready-made expressions for popups, labels, forms, styles and dashboards; `values` fills their placeholders" },
+			{ name: "check", does: "Brackets, strings, field names, the context's `$` variables, and SQL habits such as AND or <>" },
+			{ name: "popup", does: "A computed field in a layer's popup" },
+			{ name: "label", does: "Labels from an expression on a map layer" },
+			{ name: "form", does: "A Field Maps form field: calculated, visible, required or editable when the expression is true" },
+		],
+		examples: ["Add a popup line with the population density of each district.", "In the field form, show 'Other reason' only when Reason is Other."],
+		notes: ["Expressions are checked, not run: the check catches the common mistakes, and anything with errors is not saved."],
+	},
+	{
+		name: "portal_app", category: "apps",
+		summary: "Apps built from your maps and layers: Instant Apps, Dashboards, Experience Builder, StoryMaps, Survey123, Field Maps, and Experience Builder Developer Edition.",
+		actions: [
+			{ name: "templates", does: "A kind's templates: Instant Apps from your org's gallery, Experience Builder templates, StoryMaps themes, dashboard widgets" },
+			{ name: "create", does: "Builds the app and returns its item and the link to open it" },
+		],
+		inputs: [
+			{ name: "kind=instant", does: "An Instant App of a web map from any template (Basic, Sidebar...)" },
+			{ name: "kind=dashboard", does: "A dashboard of a layer: indicators, pie / bar / line charts, list, table, map, legend, details; automatic when no widgets are given" },
+			{ name: "kind=experience", does: "An Experience Builder app from one of 50 templates, with your web map in its maps" },
+			{ name: "kind=storymap", does: "A story with a cover, headings, text and maps, in one of six themes" },
+			{ name: "kind=survey", does: "A Survey123 draft that opens in the web designer (portal_survey123 also makes XLSForms for Connect)" },
+			{ name: "kind=fieldmaps", does: "A web map ready for Field Maps: forms from the layers' fields, optional offline" },
+			{ name: "kind=exb_developer", does: "Registers Experience Builder Developer Edition and returns its client ID and setup steps" },
+		],
+		examples: ["Make a dashboard of the inspections layer with a count, a pie by status and a table.",
+			"Create a Sidebar Instant App of my parks map.", "Build a story about the river project with the flood map in the middle."],
+		notes: ["Apps are created private in your content; share them with portal_share."],
+	},
+	{
+		name: "portal_survey123", category: "apps",
+		summary: "Survey123 surveys both ways: in the browser with the web designer, or as an XLSForm Excel file for Survey123 Connect; plus every link to open and manage a survey.",
+		actions: [
+			{ name: "create", does: "A survey draft with its questions that opens in the Survey123 web designer; Publish there adds the layer" },
+			{ name: "publish", does: "A published survey, ready to fill in, made from an XLSForm the way Survey123 Connect publishes: the form, its layer and the form view" },
+			{ name: "xlsform", does: "An XLSForm Excel file for Survey123 Connect, checked by Survey123's own converter and saved in your content to download" },
+			{ name: "info", does: "Status, questions, layer and records, and the links: open in browser, open in the Survey123 app, manage in the website, edit in the web designer or in Connect" },
+		],
+		inputs: [
+			{ name: "questions", does: "[{type, label, choices, required}]: text, textarea, number, integer, date, datetime, single, dropdown, multi, email, image, note, geopoint" },
+			{ name: "target", does: "A layer whose fields become the questions (coded values become a dropdown)" },
+		],
+		examples: ["Make a site inspection survey with a condition question, a photo and the location.",
+			"Give me an XLSForm of the poles layer for Survey123 Connect.", "Show me the links of my inspection survey."],
+		notes: ["Without questions or a layer, a survey starts with location, name, date, notes and photo.",
+			"Don't press ArcGIS's Publish button on the XLSForm's Excel item: that publishes the sheet as a table. Use publish, or Survey123 Connect."],
 	},
 	{
 		name: "portal_rest", category: "power",

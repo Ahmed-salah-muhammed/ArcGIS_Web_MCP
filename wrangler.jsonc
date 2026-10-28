@@ -5,9 +5,11 @@
  * Secrets go in `.dev.vars` (local, gitignored) and `npx wrangler deploy --secrets-file <file>` (deployed):
  *   ARCGIS_CLIENT_ID       client id of YOUR ArcGIS OAuth 2.0 credentials (redirect: <worker>/callback)
  *   COOKIE_ENCRYPTION_KEY  random string, e.g. `openssl rand -hex 32`
- * Optional, for the documentation page's contact form (without them it answers "not set up"):
+ * For the documentation page's contact form (set them BEFORE deploying: deploy refuses while a required one is
+ * missing; a fork without a contact form removes both from `secrets.required`, and the form answers "not set up"):
  *   RESEND_API_KEY         an API key of YOUR Resend account (https://resend.com)
  *   CONTACT_TO             the address the messages go to (`npx wrangler secret put CONTACT_TO`)
+ * `wrangler dev` loads from .dev.vars ONLY the names listed in `secrets.required`.
  * A fork changes `name` and removes the KV `id` (its first deploy creates a new namespace).
  */
 {
@@ -45,7 +47,9 @@
 	"secrets": {
 		"required": [
 			"ARCGIS_CLIENT_ID",
-			"COOKIE_ENCRYPTION_KEY"
+			"COOKIE_ENCRYPTION_KEY",
+			"RESEND_API_KEY",
+			"CONTACT_TO"
 		]
 	}
 }

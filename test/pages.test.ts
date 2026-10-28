@@ -77,7 +77,12 @@ describe("pages", () => {
 		for (const t of TOPICS) expect(html).toContain(`data-topic="${t.replace(/&/g, "&amp;")}"`);
 		expect(html).toContain('name="website" tabindex="-1"');
 		expect(HOME_HEADERS["Content-Security-Policy"]).toContain("connect-src 'self'");
-		expect(html).not.toMatch(/@[a-z0-9-]+\.(com|org|net)/i); // no address of anyone in the page
+		// the developer's email and WhatsApp appear on the contact page, and nowhere else
+		const contact = html.slice(html.indexOf('id="p-contact"'), html.indexOf('id="p-about"'));
+		expect(contact).toContain(`href="mailto:${AUTHOR.email}"`);
+		expect(contact).toContain('href="https://wa.me/201225246488"');
+		expect(html.split(AUTHOR.email).length - 1).toBe(contact.split(AUTHOR.email).length - 1);
+		expect(homePage("https://a.dev", { name: "Jane Doe", url: null })).not.toMatch(/mailto:|wa\.me/);
 	});
 
 	it("documents every tool, and exactly the actions each tool has", () => {

@@ -16,7 +16,7 @@ export const props: ArcGISProps = {
 };
 
 export type Route = (params: Record<string, unknown>) => unknown;
-export type Call = { via: "request" | "get" | "upload"; url: string; params: Record<string, unknown>; file?: unknown };
+export type Call = { via: "request" | "get" | "upload" | "public"; url: string; params: Record<string, unknown>; file?: unknown };
 
 /** Routes match by URL suffix (longest wins); every call is recorded so tests can prove what was NOT sent. */
 export function fakeCtx(routes: Record<string, Route>, p: ArcGISProps = props) {
@@ -32,6 +32,9 @@ export function fakeCtx(routes: Record<string, Route>, p: ArcGISProps = props) {
 		request: async (url, params) => answer("request", url, params),
 		get: async (url, params) => answer("get", url, params),
 		upload: async (url, params, file) => answer("upload", url, params, file),
+		publicGet: async (url, params) => answer("public", url, params),
+		publicUpload: async (url, params, file) => answer("public", url, params, file),
+		publicPost: async (url, params) => answer("public", url, params),
 		wait: async () => {},
 	};
 	const urls = () => calls.map((c) => c.url);
