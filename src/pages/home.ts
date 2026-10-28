@@ -145,7 +145,7 @@ function tools(byCategory: Map<string, ToolDoc[]>) {
 const APPS = [
 	["zap", "instant", "Instant Apps", "A ready app of a web map from any template in your org's gallery: Basic, Sidebar, Exhibit and more.",
 		"Create a Sidebar Instant App of my parks map."],
-	["gauge", "dashboard", "Dashboards", "Indicators, pie, bar and line charts, list, table, map, legend and details from a layer, or chosen for you.",
+	["gauge", "dashboard", "Dashboards", "Interactive: indicators, pie, bar and line charts, list, table, map and more, filtering each other; in tabs, or chosen for you.",
 		"Make a dashboard of the inspections with a count, a pie by status and a table."],
 	["grid", "experience", "Experience Builder", "An app from one of 50 Experience Builder templates, with your web map in its maps.",
 		"Build an Experience Builder app of the flood map with the billboard template."],

@@ -22,7 +22,9 @@ import { xlsformFile } from "./xlsform";
 export { XLS2XFORM };
 const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-export type SurveyArgs = Omit<AppArgs, "action"> & { action?: "create" | "publish" | "xlsform" | "info"; survey_id?: string };
+export type SurveyArgs = Omit<AppArgs, "action"> & { action?: "create" | "publish" | "xlsform" | "info"; survey_id?: string;
+	/** publish / xlsform: one group per page. */
+	pages?: boolean };
 
 /** The links of ArcGIS's "Open in Survey123" menu for a survey. */
 export function surveyLinks(id: string, portal: string, isPortal: boolean) {
@@ -50,7 +52,7 @@ async function specsFor(ctx: Ctx, args: SurveyArgs): Promise<{ specs: QuestionSp
 async function xlsform(ctx: Ctx, args: SurveyArgs) {
 	if (!args.title) throw new ArcGISError("title is required.", "bad_argument");
 	const { specs, from } = await specsFor(ctx, args);
-	const bytes = xlsformFile(args.title, specs);
+	const bytes = xlsformFile(args.title, specs, { pages: args.pages });
 	const fileName = `${args.title.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "survey"}.xlsx`;
 	const self = await portalSelf(ctx);
 	let checked = "not checked (Survey123's converter is checked on ArcGIS Online only)";

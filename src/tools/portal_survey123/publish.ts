@@ -34,7 +34,7 @@ export async function connectVersion(ctx: Ctx): Promise<string> {
 const fileSafe = (title: string) => title.replace(/[\\/:*?"<>|]+/g, "_").trim() || "survey";
 const enc = (s: string) => new TextEncoder().encode(s);
 
-export async function publishSurvey(ctx: Ctx, args: { title?: string; summary?: string; folder?: string; tags?: string[] },
+export async function publishSurvey(ctx: Ctx, args: { title?: string; summary?: string; folder?: string; tags?: string[]; pages?: boolean },
 	specs: QuestionSpec[], from: string) {
 	if (!args.title) throw new ArcGISError("title is required.", "bad_argument");
 	if (!ctx.publicUpload || !ctx.publicPost || !ctx.upload) throw new ArcGISError("Publishing surveys is not available here.", "unsupported");
@@ -44,7 +44,7 @@ export async function publishSurvey(ctx: Ctx, args: { title?: string; summary?: 
 	const portal = ctx.props.portal.replace(/\/+$/, "");
 
 	// 1. Survey123's converters, before anything is created
-	const rows = xlsformRows(title, specs);
+	const rows = xlsformRows(title, specs, { pages: args.pages });
 	const xlsxBytes = xlsx([{ name: "survey", rows: rows.survey }, { name: "choices", rows: rows.choices }, { name: "settings", rows: rows.settings }]);
 	const conv = await ctx.publicUpload(XLS2XFORM, {}, { name: `${name}.xlsx`, content: xlsxBytes, type: XLSX_TYPE, field: "xlsform" });
 	if (!conv?.success || !conv.xform) throw new ArcGISError(`Survey123's converter rejected the XLSForm: ${conv?.error ?? conv?.message ?? "no answer"}`, "xlsform_invalid");
@@ -111,7 +111,8 @@ export async function publishSurvey(ctx: Ctx, args: { title?: string; summary?: 
 
 		const item = await ctx.request(`${base(ctx)}/content/items/${id}`);
 		return { survey: itemCard(item, ctx.props.portal), status: "published", from,
-			layer: { item_id: svc.itemId, url: `${svc.serviceurl}/0`, kind: isTable ? "table" : "point layer" },
+			layer: { item_id: svc.itemId, url: `${svc.serviceurl}/0`,
+				kind: isTable ? "table" : `${{ esriGeometryPolyline: "line", esriGeometryPolygon: "polygon" }[(schema as any).layers[0].geometryType as string] ?? "point"} layer` },
 			form_view: { item_id: view.itemId, url: `${view.serviceurl}/0` }, connect_version: version,
 			questions: rows.questions.map((q) => `${q.label} (${q.spec.type})`) };
 	});

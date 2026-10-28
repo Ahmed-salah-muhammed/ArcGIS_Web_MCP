@@ -4,7 +4,8 @@
  * resource config/config.json, and publishing = the same config as the item data + "status: Published" + the url.
  * A web map is bound like in published experiences: a WEB_MAP data source plus useDataSources on every map widget
  * (legends and layer lists already point at the map widget). The template keeps its own exbVersion so Experience
- * Builder upgrades it when it loads.
+ * Builder upgrades it when it loads. theme_color sets the theme's primary colour (customTheme.colors.primary, as a
+ * published experience on ArcGIS Online keeps it).
  */
 import { ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
@@ -70,6 +71,10 @@ export async function createExperience(ctx: Ctx, args: AppArgs) {
 	const home = orgHome(self, ctx.props.portal);
 	config.attributes = { ...(config.attributes ?? {}), portalUrl: home };
 	if (map) bindWebMap(config, map, home);
+	if (args.theme_color !== undefined) {
+		if (!/^#[0-9a-f]{6}$/i.test(args.theme_color)) throw new ArcGISError("theme_color must be #rrggbb.", "bad_argument");
+		config.customTheme = { ...(config.customTheme ?? {}), colors: { ...(config.customTheme?.colors ?? {}), primary: args.theme_color.toLowerCase() } };
+	}
 	const title = args.title ?? (map ? `${map.title} experience` : "New experience");
 	const publish = args.publish ?? true;
 	const keywords = ["EXB Experience", "JavaScript", "Ready To Use", publish ? "status: Published" : "status: Draft", "Web Application",
@@ -85,6 +90,7 @@ export async function createExperience(ctx: Ctx, args: AppArgs) {
 		if (publish) await updateItem(ctx, id, { url: open, text });
 		const item = await ctx.request(`${base(ctx)}/content/items/${id}`);
 		return { app: itemCard(item, ctx.props.portal), open: publish ? open : null, edit, template: name, map_bound: Boolean(map),
+			...(args.theme_color ? { theme_color: args.theme_color.toLowerCase() } : {}),
 			...(tpl.needs_layer ? { note: `These widgets need a layer chosen in the builder: ${tpl.needs_layer.join(", ")}.` } : {}),
 			...(!publish ? { note_draft: "Saved as a draft: open it in the builder and Publish." } : {}) };
 	});

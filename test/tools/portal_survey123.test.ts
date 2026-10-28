@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { survey123, surveyLinks, XLS2XFORM } from "../../src/tools/portal_survey123/handler";
+import { question } from "../../src/tools/portal_survey123/draft";
 import { XFORM2WEBFORM } from "../../src/tools/portal_survey123/publish";
 import { surveySchema } from "../../src/tools/portal_survey123/schema";
 import { crc32, xlsformRows } from "../../src/tools/portal_survey123/xlsform";
@@ -14,18 +15,75 @@ describe("XLSForm", () => {
 			{ type: "geopoint", label: "Where" }, { type: "dropdown", label: "Asset type", choices: ["Pole", "Water valve"], required: true },
 			{ type: "multi", label: "Issues", choices: ["Rust", "Broken part"] }, { type: "textarea", label: "Notes" },
 			{ type: "email", label: "Email" }, { type: "integer", label: "Count" }]);
-		expect(survey.slice(1).map((r) => r.slice(0, 5))).toEqual([
+		expect(survey[0].slice(0, 7)).toEqual(["type", "name", "label", "hint", "required", "required_message", "appearance"]);
+		// type, name, label, required, appearance
+		const cols = (r: unknown[]) => [r[0], r[1], r[2], r[4], r[6]];
+		expect(survey.slice(1).map(cols)).toEqual([
 			["geopoint", "location", "Where", undefined, undefined],
 			["select_one asset_type_list", "asset_type", "Asset type", "yes", "minimal"],
 			["select_multiple issues_list", "issues", "Issues", undefined, undefined],
 			["text", "notes", "Notes", undefined, "multiline"],
 			["text", "email", "Email", undefined, undefined],
 			["integer", "count", "Count", undefined, undefined]]);
-		expect(survey[5][5]).toMatch(/^regex\(\., /);
+		expect(survey[5][8]).toMatch(/^regex\(\., /);
 		expect(choices.slice(1)).toEqual([["asset_type_list", "Pole", "Pole"], ["asset_type_list", "water_valve", "Water valve"],
 			["issues_list", "Rust", "Rust"], ["issues_list", "broken_part", "Broken part"]]);
 		expect(settings[1].slice(0, 2)).toEqual(["Site inspection", "site_inspection"]);
 		expect(() => xlsformRows("x", [{ type: "single", label: "Pick" }])).toThrow(/needs choices/);
+	});
+
+	it("XLSForm-only settings: groups and pages, names in expressions, calculate, signature, choice filters", () => {
+		const { survey, choices, settings, questions } = xlsformRows("Damage", [
+			{ type: "single", label: "Status", name: "status", choices: ["ok", "damaged"], required: true, required_message: "Pick one",
+				group: "Asset" },
+			{ type: "number", label: "Cost", hint: "In EGP", relevant: "${status} = 'damaged'", constraint: ". >= 0",
+				constraint_message: "No negatives", group: "Asset" },
+			{ type: "calculate", label: "", name: "vat", calculation: "${cost} * 0.14" },
+			{ type: "dropdown", label: "Region", choices: [{ value: "n", label: "North", filter: "" }] },
+			{ type: "dropdown", label: "City", choice_filter: "filter=${region}", choices: [{ value: "alex", label: "Alexandria", filter: "n" }] },
+			{ type: "signature", label: "Signed by", read_only: false, group: "Sign" }, { type: "date", label: "When", default: "today()", read_only: true }],
+			{ pages: true });
+		const h = survey[0];
+		const at = (row: unknown[], col: string) => row[h.indexOf(col)];
+		expect(survey.map((r) => r[0])).toEqual(["type", "begin group", "select_one status_list", "decimal", "end group", "calculate",
+			"select_one region_list", "select_one city_list", "begin group", "image", "end group", "date"]);
+		expect(survey[1].slice(0, 3)).toEqual(["begin group", "asset_group", "Asset"]);
+		expect(at(survey[1], "appearance")).toBe("field-list");
+		expect(at(survey[2], "required_message")).toBe("Pick one");
+		expect([at(survey[3], "hint"), at(survey[3], "relevant"), at(survey[3], "constraint"), at(survey[3], "constraint_message")])
+			.toEqual(["In EGP", "${status} = 'damaged'", ". >= 0", "No negatives"]);
+		expect([survey[5][1], at(survey[5], "label"), at(survey[5], "calculation")]).toEqual(["vat", undefined, "${cost} * 0.14"]);
+		expect(at(survey[7], "choice_filter")).toBe("filter=${region}");
+		expect(at(survey[9], "appearance")).toBe("signature");
+		expect([at(survey[11], "default"), at(survey[11], "readonly")]).toEqual(["today()", "yes"]);
+		expect(choices[0]).toEqual(["list_name", "name", "label", "filter"]);
+		expect(choices.slice(-1)).toEqual([["city_list", "alex", "Alexandria", "n"]]);
+		expect(settings).toEqual([["form_title", "form_id", "version", "style"], ["Damage", "damage", expect.any(String), "pages"]]);
+		expect(questions.map((q) => q.name)).toEqual(["status", "cost", "vat", "region", "city", "signed_by", "when"]);
+		// expressions must point at questions; one geometry question
+		expect(() => xlsformRows("x", [{ type: "text", label: "A", relevant: "${nope} = 1" }])).toThrow(/\$\{nope\} is not a question name/);
+		expect(() => xlsformRows("x", [{ type: "calculate", label: "Total" }])).toThrow(/needs calculation/);
+		expect(() => xlsformRows("x", [{ type: "geopoint", label: "P" }, { type: "geoshape", label: "Area" }])).toThrow(/one location question/);
+		expect(() => xlsformRows("x", [{ type: "text", label: "A", name: "a" }, { type: "text", label: "B", name: "a" }])).toThrow(/Two questions/);
+	});
+
+	it("the layer follows the questions: line or polygon geometry, attachments for signatures, text fields for time and calculate", () => {
+		const line: any = surveySchema("trail", xlsformRows("trail", [{ type: "geotrace", label: "Path" }, { type: "time", label: "At" },
+			{ type: "calculate", label: "Len", calculation: "1" }, { type: "signature", label: "Sig" }]).questions);
+		expect(line.layers[0]).toMatchObject({ geometryType: "esriGeometryPolyline", hasAttachments: true,
+			drawingInfo: { renderer: { symbol: { type: "esriSLS", width: 2 } } } });
+		expect(line.layers[0].fields.map((f: any) => [f.name, f.type])).toEqual([["objectid", "esriFieldTypeOID"], ["globalid", "esriFieldTypeGlobalID"],
+			["at", "esriFieldTypeString"], ["len", "esriFieldTypeString"]]);
+		const area: any = surveySchema("plots", xlsformRows("plots", [{ type: "geoshape", label: "Plot" }]).questions);
+		expect(area.layers[0]).toMatchObject({ geometryType: "esriGeometryPolygon", hasAttachments: false,
+			drawingInfo: { renderer: { symbol: { type: "esriSFS", color: [0, 178, 255, 48] } } } });
+	});
+
+	it("the web designer's draft takes hints but sends XLSForm-only types and settings to publish / xlsform", () => {
+		const used = new Set<string>();
+		expect(question({ type: "text", label: "Name", hint: "Full <name>" }, 1, used, {}).description).toBe("Full &lt;name&gt;");
+		expect(() => question({ type: "signature", label: "Sig" }, 2, used, {})).toThrow(/made with an XLSForm: use portal_survey123 action=publish/);
+		expect(() => question({ type: "text", label: "A", relevant: "1", group: "G" }, 3, used, {})).toThrow(/group, relevant are XLSForm settings/);
 	});
 
 	it("the zip's CRC-32 is the standard one", () => {
