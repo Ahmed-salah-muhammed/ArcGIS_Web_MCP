@@ -86,7 +86,48 @@ Deleting, bulk edits, public sharing and anything that spends credits ask for yo
 
 ## Development
 
-Building, running locally and deploying: [docs/ArcGIS-Web-MCP-Documentation.docx](docs/ArcGIS-Web-MCP-Documentation.docx).
+You need [Node.js](https://nodejs.org) 22 or newer, a Cloudflare account, and OAuth 2.0 credentials from ArcGIS
+(an app in your ArcGIS content). Add these redirect URLs to the credentials: `http://localhost:8788/callback` for
+local runs, and `https://<your worker>/callback` for the deployed server.
+
+```bash
+npm ci
+cp .dev.vars.example .dev.vars   # then fill in the values
+npm run dev                      # http://localhost:8788/ (documentation), MCP at http://localhost:8788/mcp
+```
+
+Before you push:
+
+```bash
+npm run type-check
+npm test                         # no network or ArcGIS account needed
+```
+
+GitHub Actions runs both on every push to `main` and every pull request.
+
+Deploy (the first deploy creates the KV namespace):
+
+```bash
+npx wrangler deploy --secrets-file .dev.vars
+```
+
+Settings in `wrangler.jsonc` (`vars`):
+
+| Variable | What it does |
+| --- | --- |
+| `ARCGIS_PORTAL_URL` | ArcGIS Online by default; an Enterprise portal works too, e.g. `https://gis.example.com/portal` |
+| `ARCGIS_EXTRA_HOSTS` | Extra hosts allowed to receive the user's token (e.g. federated servers or a geocoder on another host) |
+| `MAX_SUBREQUESTS` | Requests to ArcGIS one tool call may make: 50 on Cloudflare's free plan, more on a paid plan |
+| `CONTACT_FROM` | Sender of the contact form's emails |
+
+A fork changes `name` and removes the KV `id` in `wrangler.jsonc`; without a contact form, it also removes
+`RESEND_API_KEY` and `CONTACT_TO` from `secrets.required`.
+
+Each tool is a folder in `src/tools/`: `index.ts` defines it (name, description, input schema) and `handler.ts`
+does the work; code several tools share is in `src/tools/shared/`. Every tool and action must also be described in
+`src/pages/docs.ts`; a test checks that.
+
+The full guide: [docs/ArcGIS-Web-MCP-Documentation.docx](docs/ArcGIS-Web-MCP-Documentation.docx).
 
 ---
 
