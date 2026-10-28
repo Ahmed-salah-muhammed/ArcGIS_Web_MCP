@@ -16,6 +16,10 @@ export const SELECTOR_PLACES = ["header", "sidebar"] as const;
 
 export type WidgetSpec = {
 	type: (typeof WIDGET_TYPES)[number];
+	/** The widget's own layer: another feature layer item (target, with layer = its sublayer), or layer alone = a
+	 * layer of the web map (title, id or index), or of the dashboard's item when there is no web map. */
+	target?: string;
+	layer?: string | number;
 	/** indicator: the field the statistic is on; pie/bar/line: the category field; list: the line shown. */
 	field?: string;
 	/** pie/bar/line: the summed/averaged field (count needs none). */
@@ -72,6 +76,9 @@ export type WidgetSpec = {
 export type SelectorSpec = {
 	type: (typeof SELECTOR_TYPES)[number];
 	field: string;
+	/** The selector's layer, as for widgets (default the dashboard's). */
+	target?: string;
+	layer?: string | number;
 	title?: string;
 	/** category: pick several values (default one). */
 	multiple?: boolean;
@@ -171,6 +178,8 @@ export type AppArgs = {
 	selectors_at?: (typeof SELECTOR_PLACES)[number];
 	/** dashboard: text at the top of the sidebar. */
 	sidebar_title?: string;
+	/** dashboard: fields that mean the same thing in two layers under different names, for filtering across layers. */
+	links?: { from: string; to: string }[];
 	fields?: string[];
 	/** fieldmaps: groups, hints, required / read-only fields, show_when, photos. */
 	form?: FormSpec;

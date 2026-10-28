@@ -193,7 +193,7 @@ export const TOOL_DOCS: ToolDoc[] = [
 		],
 		inputs: [
 			{ name: "kind=instant", does: "An Instant App of a web map from any template (Basic, Sidebar...); options are the template's own settings, checked against it" },
-			{ name: "kind=dashboard", does: "An interactive dashboard of a layer: indicators (compared with last year or any reference), gauges, pie / bar / line charts (by date, split into stacked series, with target lines), list, table (cells coloured by condition), map, legend, details, embedded pages and images, in tabs if you like; category / date / number selectors in the header or a sidebar; filters on text, numbers and dates; selecting in one widget filters the others and the map; automatic when no widgets are given" },
+			{ name: "kind=dashboard", does: "An interactive dashboard of a layer: indicators (compared with last year or any reference), gauges, pie / bar / line charts (by date, split into stacked series, with target lines), list, table (cells coloured by condition), map, legend, details, embedded pages and images, in tabs if you like; category / date / number selectors in the header or a sidebar; filters on text, numbers and dates; widgets on several layers (each widget its own layer, filtering across layers through a shared or linked field, and by area when a polygon is selected on the map); selecting in one widget filters the others and the map; automatic when no widgets are given" },
 			{ name: "kind=experience", does: "An Experience Builder app from one of 50 templates, with your web map in its maps and your brand colour" },
 			{ name: "kind=storymap", does: "A story of blocks: headings, rich text, quotes, lists, images, maps, embeds, video, buttons, big numbers, swipe comparisons, sidecar slides and timelines, with a cover image and a navigation bar, in one of six themes" },
 			{ name: "kind=survey", does: "A Survey123 draft that opens in the web designer (portal_survey123 also makes XLSForms for Connect)" },
@@ -206,7 +206,7 @@ export const TOOL_DOCS: ToolDoc[] = [
 			"A dashboard with a sidebar of filters (status, last 7 / 30 days, minimum cost), this year's count vs last year, and a gauge of work done.",
 			"Create a Sidebar Instant App of my parks map.", "Build a story about the river project with the flood map in the middle."],
 		notes: ["Apps are created private in your content; share them with portal_share.",
-			"Every app is written in shapes read from real items or the ArcGIS API for Python; what could not be verified is left to the app's builder: a dashboard reads one layer, story images are linked by URL, surveys have no repeats, Experience Builder widgets other than maps get their layers in the builder."],
+			"Every app is written in shapes read from real items or the ArcGIS API for Python; what could not be verified is left to the app's builder: story images are linked by URL, surveys have no repeats, Experience Builder widgets other than maps get their layers in the builder."],
 	},
 	{
 		name: "portal_survey123", category: "apps",

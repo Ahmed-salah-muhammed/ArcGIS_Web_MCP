@@ -409,6 +409,71 @@ describe("portal_app: professional dashboards", () => {
 	});
 });
 
+describe("portal_app: dashboards on several layers", () => {
+	const govs = { name: "governorates", geometryType: "esriGeometryPolygon", objectIdField: "OID", fields: [{ name: "OID", type: "esriFieldTypeOID" },
+		{ name: "GOV_NAME", type: "esriFieldTypeString" }, { name: "POP", type: "esriFieldTypeInteger" }] };
+	const sites = { name: "sites", geometryType: "esriGeometryPoint", objectIdField: "OBJECTID", fields: [{ name: "OBJECTID", type: "esriFieldTypeOID" },
+		{ name: "governorate", type: "esriFieldTypeString" }, { name: "STATUS", type: "esriFieldTypeString" }] };
+	const SVC2 = "https://services.example.com/arcgis/rest/services/govs/FeatureServer";
+	const routes = () => ({ ...common({
+		[`${SVC}/0`]: () => sites, [`${SVC2}/0`]: () => govs,
+		[`${SVC}/0/query`]: () => ({ features: [{ attributes: { STATUS: "open", n: 3 } }] }),
+		[`${SVC2}/0/query`]: () => ({ features: [{ attributes: { GOV_NAME: "Giza", n: 1 } }] }),
+	}), [`/content/items/${MAP}/data`]: () => ({ operationalLayers: [{ id: "op-sites", title: "Sites", url: `${SVC}/0` },
+		{ id: "op-govs", title: "Governorates", url: `${SVC2}/0` }] }) });
+	const build = async (args: Record<string, unknown>) => {
+		silence();
+		const { ctx, calls } = fakeCtx(routes());
+		const out: any = await app(ctx, { kind: "dashboard", webmap_id: MAP, ...args } as any);
+		const data = json(sent(calls, "/addItem")[0].params.text);
+		const byName = (name: string) => data.desktopView.widgets.find((w: any) => w.name === name);
+		return { out, data, byName, calls };
+	};
+
+	it("each widget reads its own layer; across layers they filter through a linked field, and polygons filter by area", async () => {
+		const { out, data, byName, calls } = await build({ links: [{ from: "GOV_NAME", to: "governorate" }],
+			widgets: [{ type: "map" }, { type: "indicator", title: "Sites" }, { type: "pie", field: "STATUS", title: "By status" },
+				{ type: "bar", field: "GOV_NAME", layer: "Governorates", title: "Governorates" },
+				{ type: "table", layer: "governorates", title: "Gov table", fields: ["GOV_NAME", "POP"] }],
+			selectors: [{ type: "category", field: "governorate" }] });
+		const [map, sitesN, pie, bar, govTable] = data.desktopView.widgets;
+		expect(sitesN.datasets[0].dataSource).toEqual({ type: "layerDataSource", itemId: MAP, layerId: "op-sites" });
+		expect(bar.datasets[0].dataSource).toEqual({ type: "layerDataSource", itemId: MAP, layerId: "op-govs" });
+		// the governorates layer is read once for both of its widgets
+		expect(calls.filter((c) => c.url === `${SVC2}/0`)).toHaveLength(1);
+		// the bar (governorates) filters the sites' widgets through governorate, its own layer's without a field map
+		expect(bar.events[0].actions[0].targets).toEqual([
+			{ targetId: `${sitesN.id}#main`, by: "whereClause", requiresSelection: false, fieldMap: [{ sourceName: "GOV_NAME", targetName: "governorate" }] },
+			{ targetId: `${pie.id}#main`, by: "whereClause", requiresSelection: false, fieldMap: [{ sourceName: "GOV_NAME", targetName: "governorate" }] },
+			{ targetId: `${govTable.id}#main`, by: "whereClause", requiresSelection: false },
+			{ targetId: `${map.id}#op-sites`, by: "whereClause", requiresSelection: false, fieldMap: [{ sourceName: "GOV_NAME", targetName: "governorate" }] },
+			{ targetId: `${map.id}#op-govs`, by: "whereClause", requiresSelection: false }]);
+		// the pie's STATUS exists only on sites: the governorates' widgets are left alone
+		expect(pie.events[0].actions[0].targets.map((t: any) => t.targetId)).toEqual([`${sitesN.id}#main`, `${map.id}#op-sites`]);
+		// selecting a governorate on the map filters everything inside it; selecting a site, only the sites' widgets
+		const onMap = Object.fromEntries(map.layers.map((x: any) => [x.dataSource.layerId, x.events[0].actions[0].targets.map((t: any) => t.targetId)]));
+		expect(onMap["op-govs"]).toEqual([sitesN, pie, bar, govTable].map((w) => `${w.id}#main`));
+		expect(onMap["op-sites"]).toEqual([sitesN, pie].map((w) => `${w.id}#main`));
+		// the selector on sites reaches the governorates' widgets through the link
+		const sel = data.desktopView.header.selectors[0];
+		expect(sel.events[0].actions[0].targets).toContainEqual({ targetId: `${bar.id}#main`, by: "whereClause", requiresSelection: false,
+			fieldMap: [{ sourceName: "governorate", targetName: "GOV_NAME" }] });
+		expect(out.data_from).toEqual([{ layer: "sites", through: "the web map", widgets: 2, on_map: true },
+			{ layer: "governorates", through: "the web map", widgets: 2, on_map: true }]);
+		expect(byName("By status")).toBe(pie);
+	});
+
+	it("without a shared field, other layers are not filtered and the selector says so; unknown links are refused", async () => {
+		const { data, out } = await build({ widgets: [{ type: "pie", field: "STATUS", title: "P" }, { type: "indicator", layer: 1, title: "Govs" }],
+			selectors: [{ type: "category", field: "STATUS" }] });
+		const [pie, govsN] = data.desktopView.widgets;
+		expect(govsN.datasets[0].dataSource.layerId).toBe("op-govs");
+		expect(pie.events).toBeUndefined();
+		expect(out.selectors.wired[0]).toMatchObject({ field: "STATUS", does_not_filter: ["Govs"] });
+		await expect(build({ widgets: [{ type: "indicator" }], links: [{ from: "NOPE", to: "governorate" }] })).rejects.toThrow(/links: 'NOPE'/);
+	});
+});
+
 describe("portal_app: executive dashboards", () => {
 	const HEAT = "9".repeat(32);
 	const layer = { name: "users", objectIdField: "OBJECTID", fields: [{ name: "OBJECTID", type: "esriFieldTypeOID" },

@@ -30,7 +30,9 @@ export const tool = defineTool({
 		+ "(target lines/bands), highlight [{field, when, color, background}] (table cell / list row colours), sort_by \"FIELD desc\"}], "
 		+ "or omitted for an automatic one; selectors [{type: category|date|number, field, title, multiple, display dropdown|buttons|"
 		+ "calendar, presets [{label, last, unit}], operator >=|<=|=, min, max, step}] filter everything, selectors_at header|sidebar, "
-		+ "sidebar_title; menu_links [{label, url}], logo_link; interactive (default true: selecting in a chart/list/"
+		+ "sidebar_title; menu_links [{label, url}], logo_link; several layers: target / layer on any widget or selector (another item, "
+		+ "or another layer of the web map); across layers widgets filter each other through a field both have (same name, or "
+		+ "links [{from, to}]) and selecting a polygon on the map filters what lies inside; interactive (default true: selecting in a chart/list/"
 		+ "table filters the other widgets and the map and zooms to it, selecting on the map filters them), extent_filter (default true: "
 		+ "moving the map filters them); style classic|executive (dark panels with icons, donuts with outside labels, smooth area "
 		+ "lines; navy theme); theme light|dark|navy; subtitle; logo_url) | "
@@ -63,6 +65,9 @@ export const tool = defineTool({
 		options: z.record(z.string(), z.any()).optional(),
 		widgets: z.array(z.object({
 			type: z.enum(WIDGET_TYPES),
+			target: z.string().optional().describe("dashboard: this widget's own feature layer item (default the dashboard's)"),
+			layer: z.union([z.string(), z.number()]).optional()
+				.describe("dashboard: this widget's layer: of target, or of the web map (title/id/index) when there is no target"),
 			field: z.string().optional(),
 			value_field: z.string().optional(),
 			statistic: z.enum(STATISTICS).optional(),
@@ -99,6 +104,8 @@ export const tool = defineTool({
 		selectors: z.array(z.object({
 			type: z.enum(SELECTOR_TYPES),
 			field: z.string(),
+			target: z.string().optional().describe("the selector's own layer item (default the dashboard's)"),
+			layer: z.union([z.string(), z.number()]).optional(),
 			title: z.string().max(80).optional(),
 			multiple: z.boolean().optional().describe("category: pick several"),
 			display: z.enum(["dropdown", "buttons", "calendar"]).optional().describe("category: dropdown|buttons; date: buttons (presets) or calendar"),
@@ -111,6 +118,8 @@ export const tool = defineTool({
 		})).max(8).optional().describe("dashboard: selectors that filter every widget and the map"),
 		selectors_at: z.enum(SELECTOR_PLACES).optional().describe("dashboard: header (default for up to 2) or sidebar"),
 		sidebar_title: z.string().max(200).optional(),
+		links: z.array(z.object({ from: z.string(), to: z.string() })).max(10).optional()
+			.describe("dashboard: fields that mean the same in two layers under different names, e.g. {from: GOV_NAME, to: governorate}"),
 		menu_links: z.array(z.object({ label: z.string().max(60), url: z.string() })).max(8).optional().describe("dashboard: header menu links (https)"),
 		logo_link: z.string().optional().describe("dashboard: where clicking the logo goes (https)"),
 		style: z.enum(STYLES).optional().describe("dashboard: classic (default) or executive"),

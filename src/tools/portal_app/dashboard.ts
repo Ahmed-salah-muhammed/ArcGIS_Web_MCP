@@ -19,6 +19,10 @@
  * that filter every widget and the map; gauges; indicators compared with a reference (last year, a target group);
  * bar and line charts split into stacked series with target lines and bands; table cells and list rows coloured by a
  * condition (Arcade advanced formatting); header menu links. Filters take numbers and dates too (filters.ts).
+ * Widgets and selectors may each read their own layer (target / layer per widget: another item, or another layer of the
+ * web map), as dashboards allow. Across layers, actions follow the Actions tab's rules: a target on another layer is
+ * filtered through a field both layers have (the same name, or paired in links: fieldMap source -> target), and
+ * selecting a polygon on the map filters the other layers' widgets by geometry (what lies inside it).
  */
 import { ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
@@ -122,8 +126,12 @@ export const WIDGET_HELP = {
 };
 
 type Source = { type: "layerDataSource"; itemId: string; layerId: string | number };
-/** The data layer: its URL, how widgets read it, its definition, the map it came through, and its portal item. */
-type Layer = { url: string; source: Source; info: any; mapId: string | null; item?: { id: string; layer: number } | null };
+/**
+ * A data layer: its URL, how widgets read it, its definition, the map it came through, and its portal item. key (the
+ * URL) says which widgets read the same layer, whichever way they reach it.
+ */
+export type Layer = { url: string; source: Source; info: any; mapId: string | null; item?: { id: string; layer: number } | null; key?: string };
+const keyOf = (l: Layer) => l.key ?? String(l.url).replace(/\/+$/, "").toLowerCase();
 
 const uuid = () => crypto.randomUUID();
 const widget = (type: string, name: string) => ({ id: uuid(), dashboardItemType: "widget", name, noDataState: {},
@@ -574,49 +582,100 @@ const datasetsOf = (w: any, by: Target["by"], field?: string, source?: string) =
 	.filter((d: any) => d.type === "serviceDataset" && (d.name === "main" || d.name === "reference"))
 	.map((d: any) => to(`${w.id}#${d.name}`, by, field, source));
 
-/** What wiring needs to know about a widget: the field a chart groups by, or the field a grouped (Arcade) list rows are. */
-export type WidgetMeta = Map<string, { category?: string; groupedBy?: string }>;
+/** What wiring needs to know about a widget: its layer, the field a chart groups by, or the field a grouped (Arcade) list rows are. */
+export type WidgetMeta = Map<string, { category?: string; groupedBy?: string; layer?: Layer }>;
+/** The main map widget and the map layer showing each data layer (by layer key). */
+export type MapWiring = { widget: any; layers: { layer: Layer; id: string }[] };
+/** Fields that mean the same thing in two layers under different names. */
+export type Links = { from: string; to: string }[];
+
+/**
+ * The name `field` of layer `from` has in layer `to`: itself on the same layer, else a field of the same name (any
+ * case) or one paired with it in links; null when `to` has none.
+ */
+export function correspondingField(from: Layer | undefined, field: string, to: Layer | undefined, links: Links = []): string | null {
+	if (!from || !to) return null;
+	if (keyOf(from) === keyOf(to)) return field;
+	const has = (name: string) => (to.info.fields ?? []).find((f: any) => String(f.name).toLowerCase() === name.toLowerCase())?.name ?? null;
+	const lower = field.toLowerCase();
+	for (const l of links) {
+		if (l.from.toLowerCase() === lower && has(l.to)) return has(l.to);
+		if (l.to.toLowerCase() === lower && has(l.from)) return has(l.from);
+	}
+	return has(field);
+}
 
 /**
  * Wires the widgets like the dashboard's Actions tab: a selection in a chart, list or table filters every other data
- * widget and the map's layer (by where clause) and zooms the map to it; a selection on the map's layer, and moving
- * the map (extent_filter), filter the data widgets by geometry. Grouped (Arcade) lists have no geometry: they filter
- * and are filtered by where clause through their field (fieldMap), by the map's selection and by charts of that field.
+ * widget of its layer and the map's copy of it (by where clause) and zooms the map to it; a chart also filters widgets
+ * of other layers that share its field. A selection on the map, and moving the map (extent_filter), filter the data
+ * widgets by geometry: the map's selection those of the same layer, or of every layer when it is a polygon. Grouped
+ * (Arcade) lists have no geometry: they filter and are filtered by where clause through their field (fieldMap).
  * Returns what was wired.
  */
-export function wireActions(widgets: any[], map: { widget: any; layerId: string | null } | null, extentFilter: boolean,
-	meta: WidgetMeta = new Map()) {
+export function wireActions(widgets: any[], map: MapWiring | null, extentFilter: boolean, meta: WidgetMeta = new Map(), links: Links = []) {
 	const groupedBy = (w: any) => meta.get(w.id)?.groupedBy;
+	const layerOf = (w: any) => meta.get(w.id)?.layer;
+	const same = (a: any, b: Layer | undefined) => Boolean(layerOf(a) && b && keyOf(layerOf(a)!) === keyOf(b));
 	const data = widgets.filter((w) => DATA_TYPES.has(w.type) && !groupedBy(w));
 	const lists = widgets.filter((w) => groupedBy(w));
-	const listsOn = (field: string | undefined, not?: any) => (field ? lists.filter((g) => g !== not && groupedBy(g) === field) : [])
-		.map((g) => to(`${g.id}#main`, "whereClause", field));
+	const mapLayers = map?.layers ?? [];
+	/** Grouped lists reached by `field` of layer `from`: those grouped by its counterpart in their layer. */
+	const listsOn = (from: Layer | undefined, field: string | undefined, not?: any) => (field ? lists : []).filter((g) => g !== not)
+		.flatMap((g) => {
+			const tf = correspondingField(from, field!, layerOf(g), links);
+			return tf && tf === groupedBy(g) ? [to(`${g.id}#main`, "whereClause", tf, field)] : [];
+		});
 	for (const w of data.filter((o) => SOURCE_TYPES.has(o.type))) {
-		const targets = [...data.filter((o) => o !== w).flatMap((o) => datasetsOf(o, "whereClause")),
-			...listsOn(meta.get(w.id)?.category),
-			...(map?.layerId ? [to(`${map.widget.id}#${map.layerId}`, "whereClause")] : [])];
+		const l = layerOf(w);
+		const category = meta.get(w.id)?.category;
+		const across = (other: Layer | undefined) => (category ? correspondingField(l, category, other, links) : null);
+		const targets = [...data.filter((o) => o !== w).flatMap((o) => {
+			if (same(o, l)) return datasetsOf(o, "whereClause");
+			const tf = across(layerOf(o));
+			return tf ? datasetsOf(o, "whereClause", tf, category) : [];
+		}), ...listsOn(l, category),
+		...mapLayers.flatMap((m) => {
+			if (l && keyOf(m.layer) === keyOf(l)) return [to(`${map!.widget.id}#${m.id}`, "whereClause")];
+			const tf = across(m.layer);
+			return tf ? [to(`${map!.widget.id}#${m.id}`, "whereClause", tf, category)] : [];
+		})];
 		const actions: any[] = targets.length ? [{ type: "filter", targets }] : [];
 		if (map) actions.push({ type: "zoom", targets: [to(map.widget.id, "geometry")] });
 		if (actions.length) w.events = [{ type: "selectionChanged", actions }];
 	}
 	for (const g of lists) {
 		const field = groupedBy(g)!;
-		const targets = [...data.flatMap((o) => datasetsOf(o, "whereClause", field)), ...listsOn(field, g),
-			...(map?.layerId ? [to(`${map.widget.id}#${map.layerId}`, "whereClause", field)] : [])];
+		const lg = layerOf(g);
+		const targets = [...data.flatMap((o) => {
+			const tf = correspondingField(lg, field, layerOf(o), links) ?? (layerOf(o) ? null : field);
+			return tf ? datasetsOf(o, "whereClause", tf, field) : [];
+		}), ...listsOn(lg, field, g),
+		...mapLayers.flatMap((m) => {
+			const tf = correspondingField(lg, field, m.layer, links);
+			return tf ? [to(`${map!.widget.id}#${m.id}`, "whereClause", tf, field)] : [];
+		})];
 		if (targets.length) g.events = [{ type: "selectionChanged", actions: [{ type: "filter", targets }] }];
 	}
-	const byGeometry = () => data.flatMap((o) => datasetsOf(o, "geometry"));
 	const extent = Boolean(map && extentFilter && data.length);
-	const mapSelect = Boolean(map?.layerId && (data.length || lists.length));
-	if (extent) map!.widget.events = [{ type: "extentChanged", actions: [{ type: "filter", targets: byGeometry() }] }];
-	if (mapSelect) {
-		const targets = [...byGeometry(), ...lists.map((g) => to(`${g.id}#main`, "whereClause", groupedBy(g)))];
-		map!.widget.layers = [{ type: "layer", dataSource: { type: "layerDataSource", itemId: map!.widget.itemId, layerId: map!.layerId },
-			events: [{ type: "selectionChanged", actions: [{ type: "filter", targets }] }] }];
+	if (extent) map!.widget.events = [{ type: "extentChanged", actions: [{ type: "filter", targets: data.flatMap((o) => datasetsOf(o, "geometry")) }] }];
+	const selectable = mapLayers.map((m) => {
+		const polygon = m.layer.info.geometryType === "esriGeometryPolygon";
+		const targets = [...data.filter((o) => polygon || same(o, m.layer) || !layerOf(o)).flatMap((o) => datasetsOf(o, "geometry")),
+			...lists.flatMap((g) => {
+				const sf = correspondingField(layerOf(g), groupedBy(g)!, m.layer, links);
+				return sf ? [to(`${g.id}#main`, "whereClause", groupedBy(g), sf)] : [];
+			})];
+		return { m, targets };
+	}).filter((x) => x.targets.length);
+	if (selectable.length) {
+		map!.widget.layers = selectable.map(({ m, targets }) => ({ type: "layer",
+			dataSource: { type: "layerDataSource", itemId: map!.widget.itemId, layerId: m.id },
+			events: [{ type: "selectionChanged", actions: [{ type: "filter", targets }] }] }));
 		map!.widget.selectTool = { ...map!.widget.selectTool, clickToSelect: true };
 	}
 	return { selecting_filters_others: [...data.filter((o) => SOURCE_TYPES.has(o.type)), ...lists].map((w) => w.name),
-		map_extent_filters: extent, map_selection_filters: mapSelect, zoom_to_selection: Boolean(map) };
+		map_extent_filters: extent, map_selection_filters: selectable.length > 0, zoom_to_selection: Boolean(map) };
 }
 
 const selector = (type: string, name: string) => ({ id: uuid(), dashboardItemType: "selector", name, noDataState: {}, noFilterState: {},
@@ -691,21 +750,33 @@ export function selectorWidget(l: Layer, s: SelectorSpec, range?: { min: number;
 
 /**
  * Selectors filter every data widget (main, and reference) and the map's copy of the layer: a category selector by its
- * field, date and number selectors through filterField (fieldMap), as real dashboards wire them. Grouped (Arcade) lists
- * are reached only by a category selector on their own field. Returns, per selector, what it does not reach.
+ * field, date and number selectors through filterField (fieldMap), as real dashboards wire them. Widgets and map layers
+ * of other layers are reached through the field they share with the selector's layer (same name or links). Grouped
+ * (Arcade) lists are reached only by a category selector on their own field. Returns, per selector, what it does not
+ * reach.
  */
-export function wireSelectors(selectors: { widget: any; field: string }[], widgets: any[], map: { widget: any; layerId: string | null } | null,
-	meta: WidgetMeta = new Map()) {
+export function wireSelectors(selectors: { widget: any; field: string; layer?: Layer }[], widgets: any[], map: MapWiring | null,
+	meta: WidgetMeta = new Map(), links: Links = []) {
+	const layerOf = (w: any) => meta.get(w.id)?.layer;
 	const data = widgets.filter((w) => DATA_TYPES.has(w.type) && !meta.get(w.id)?.groupedBy);
 	const lists = widgets.filter((w) => meta.get(w.id)?.groupedBy);
-	return selectors.map(({ widget: s, field }) => {
+	return selectors.map(({ widget: s, field, layer }) => {
 		const category = s.type === "categorySelectorWidget";
-		const reached = lists.filter((g) => category && meta.get(g.id)?.groupedBy === field);
-		const targets = [...data.flatMap((o) => (category ? datasetsOf(o, "whereClause") : datasetsOf(o, "whereClause", field, "filterField"))),
-			...reached.map((g) => to(`${g.id}#main`, "whereClause", field)),
-			...(map?.layerId ? [to(`${map.widget.id}#${map.layerId}`, "whereClause", field, category ? field : "filterField")] : [])];
+		const there = (l: Layer | undefined) => (l && layer ? correspondingField(layer, field, l, links) : field);
+		const reached = data.filter((o) => there(layerOf(o)));
+		const listsReached = lists.filter((g) => category && there(layerOf(g)) === meta.get(g.id)?.groupedBy);
+		const targets = [...reached.flatMap((o) => {
+			const tf = there(layerOf(o))!;
+			const sameLayer = !layer || !layerOf(o) || keyOf(layer) === keyOf(layerOf(o)!);
+			return category ? (sameLayer ? datasetsOf(o, "whereClause") : datasetsOf(o, "whereClause", tf, field))
+				: datasetsOf(o, "whereClause", tf, "filterField");
+		}), ...listsReached.map((g) => to(`${g.id}#main`, "whereClause", meta.get(g.id)!.groupedBy, field)),
+		...(map?.layers ?? []).flatMap((m) => {
+			const tf = there(m.layer);
+			return tf ? [to(`${map!.widget.id}#${m.id}`, "whereClause", tf, category ? field : "filterField")] : [];
+		})];
 		if (targets.length) s.events = [{ type: "selectionChanged", actions: [{ type: "filter", targets }] }];
-		const missed = lists.filter((g) => !reached.includes(g)).map((g) => g.name);
+		const missed = [...data.filter((o) => !reached.includes(o)), ...lists.filter((g) => !listsReached.includes(g))].map((g) => g.name);
 		return { selector: s.name, field, ...(missed.length ? { does_not_filter: missed } : {}) };
 	});
 }
@@ -723,7 +794,21 @@ export function layoutFor(columns: { ids: LayoutEntry[]; width: number }[]) {
 			elements: c.ids.map((e) => entry(e, 1 / c.ids.length)) })) } };
 }
 
-async function dataLayer(ctx: Ctx, args: AppArgs, map: any | null, mapData: any): Promise<Layer> {
+/** Where a widget's data comes from: a feature layer item (target + layer), or a layer of the web map (layer). */
+type LayerRef = { target?: string; layer?: string | number };
+
+/** A feature layer of the web map by index, title or id (default the first). */
+function mapOp(mapData: any, layer: string | number | undefined) {
+	const ops = (mapData?.operationalLayers ?? []).filter((o: any) => o.url && /\/(FeatureServer|MapServer)\/\d+$/i.test(o.url));
+	const ref = String(layer ?? "").toLowerCase();
+	const op = layer === undefined ? ops[0]
+		: typeof layer === "number" || /^\d+$/.test(ref) ? ops[Number(layer)]
+			: ops.find((o: any) => [o.title, o.id].map((v) => String(v).toLowerCase()).includes(ref));
+	if (!op) throw new ArcGISError(`No feature layer '${layer ?? 0}' in the map: ${ops.map((o: any) => o.title).join(", ") || "none"}`, "not_found");
+	return op;
+}
+
+async function dataLayer(ctx: Ctx, args: LayerRef, map: any | null, mapData: any): Promise<Layer> {
 	if (args.target) {
 		const id = requireId(args.target);
 		const url = await resolveLayerUrl(ctx, id, args.layer ?? 0);
@@ -732,12 +817,7 @@ async function dataLayer(ctx: Ctx, args: AppArgs, map: any | null, mapData: any)
 			item: { id, layer } };
 	}
 	if (!map) throw new ArcGISError("A dashboard needs data: target (a feature layer item id) and/or webmap_id.", "bad_argument");
-	const ops = (mapData?.operationalLayers ?? []).filter((o: any) => o.url && /\/(FeatureServer|MapServer)\/\d+$/i.test(o.url));
-	const ref = String(args.layer ?? "").toLowerCase();
-	const op = args.layer === undefined ? ops[0]
-		: typeof args.layer === "number" || /^\d+$/.test(ref) ? ops[Number(args.layer)]
-			: ops.find((o: any) => [o.title, o.id].map((v) => String(v).toLowerCase()).includes(ref));
-	if (!op) throw new ArcGISError(`No feature layer '${args.layer ?? 0}' in the map: ${ops.map((o: any) => o.title).join(", ") || "none"}`, "not_found");
+	const op = mapOp(mapData, args.layer);
 	return { url: op.url, source: { type: "layerDataSource", itemId: map.id, layerId: op.id }, info: await ctx.request(op.url), mapId: map.id,
 		item: op.itemId ? { id: op.itemId, layer: Number(String(op.url).split("/").pop()) } : null };
 }
@@ -767,6 +847,19 @@ export async function createDashboard(ctx: Ctx, args: AppArgs) {
 	if (map && map.type !== "Web Map") throw new ArcGISError(`webmap_id must be a Web Map; ${map.id} is a ${map.type}.`, "bad_argument");
 	const mapData = map ? await ctx.request(`${base(ctx)}/content/items/${map.id}/data`) : null;
 	const l = await dataLayer(ctx, args, map, mapData);
+	const links: Links = args.links ?? [];
+	// each widget or selector may read its own layer: another item (target + layer), another layer of the web map
+	// (layer), or another layer of the dashboard's item (layer); each is read once
+	const cache = new Map<string, Promise<Layer>>();
+	const layerFor = (ref: LayerRef): Promise<Layer> => {
+		if (ref.target === undefined && ref.layer === undefined) return Promise.resolve(l);
+		const r: LayerRef = ref.target !== undefined ? { target: ref.target, layer: ref.layer }
+			: map ? { layer: ref.layer } : { target: args.target, layer: ref.layer };
+		// the same layer named two ways is read once
+		const key = r.target === undefined ? `map:${mapOp(mapData, r.layer).id}` : `${r.target}|${String(r.layer ?? 0).toLowerCase()}`;
+		if (!cache.has(key)) cache.set(key, dataLayer(ctx, r, map, mapData));
+		return cache.get(key)!;
+	};
 	const specs = args.widgets?.length ? args.widgets : autoWidgets(l.info, Boolean(map));
 	const look: Look = { exec: args.style === "executive" };
 	const theme = args.theme ?? (look.exec ? "navy" : "light");
@@ -780,16 +873,24 @@ export async function createDashboard(ctx: Ctx, args: AppArgs) {
 	const logoLink = args.logo_link === undefined ? undefined : https(args.logo_link, "logo_link");
 	const menu = (args.menu_links ?? []).map((m, i) => ({ key: String(m.label ?? "").replace(/[<>]/g, "").trim() || `Link ${i + 1}`,
 		link: https(m.url, `menu_links[${i}].url`) }));
-	// the statistics read once, before anything is made: gauges' default max, number selectors' ranges
 	const selectorSpecs = args.selectors ?? [];
+	const widgetLayers: Layer[] = [];
+	for (const sp of specs) widgetLayers.push(await layerFor(sp));
+	const selectorLayers: Layer[] = [];
+	for (const sp of selectorSpecs) selectorLayers.push(await layerFor(sp));
+	// the statistics read once per layer, before anything is made: gauges' default max, number selectors' ranges
 	const statDefs = [
 		...specs.flatMap((sp, i) => (sp.type === "gauge" && sp.max === undefined
-			? [{ ...statistic(l, sp, "gauge").definition[0], outStatisticFieldName: `GAUGE_${i}` }] : [])),
+			? [{ layer: widgetLayers[i], def: { ...statistic(widgetLayers[i], sp, "gauge").definition[0], outStatisticFieldName: `GAUGE_${i}` } }] : [])),
 		...selectorSpecs.flatMap((sp, i) => (sp.type === "number" && (sp.min === undefined || sp.max === undefined)
-			? (["min", "max"] as const).map((k) => ({ statisticType: k, onStatisticField: fieldOf(l.info, sp.field, "number selector"),
-				outStatisticFieldName: `${k.toUpperCase()}_${i}` })) : [])),
+			? (["min", "max"] as const).map((k) => ({ layer: selectorLayers[i], def: { statisticType: k,
+				onStatisticField: fieldOf(selectorLayers[i].info, sp.field, "number selector"), outStatisticFieldName: `${k.toUpperCase()}_${i}` } }))
+			: [])),
 	];
-	const stats = await layerStats(ctx, l, statDefs);
+	const stats: Record<string, number> = {};
+	for (const layer of [...new Set(statDefs.map((d) => d.layer))]) {
+		Object.assign(stats, await layerStats(ctx, layer, statDefs.filter((d) => d.layer === layer).map((d) => d.def)));
+	}
 	const title = args.title ?? `${l.info.name ?? "Layer"} dashboard`;
 	const self = await portalSelf(ctx);
 	const columns: Record<Column, LayoutEntry[]> = { left: [], center: [], right: [] };
@@ -802,7 +903,8 @@ export async function createDashboard(ctx: Ctx, args: AppArgs) {
 	if (mapSpecs.length && !map) throw new ArcGISError("A map widget needs webmap_id (the dashboard's main map).", "bad_argument");
 	if (mapSpecs.length && !mainSpec) throw new ArcGISError("One map widget must show the dashboard's webmap_id.", "bad_argument");
 	const mapW: any = mainSpec && map ? mapWidget(map.id, mainSpec.title ?? map.title, look) : null;
-	for (const s of specs) {
+	for (const [i, s] of specs.entries()) {
+		const l = widgetLayers[i];
 		let w: any;
 		if (s.type === "map") {
 			if (s === mainSpec) w = mapW;
@@ -813,22 +915,22 @@ export async function createDashboard(ctx: Ctx, args: AppArgs) {
 			}
 		} else if (s.type === "indicator") w = indicatorWidget(l, s, look);
 		else if (s.type === "gauge") {
-			const max = s.max ?? stats[`GAUGE_${specs.indexOf(s)}`];
+			const max = s.max ?? stats[`GAUGE_${i}`];
 			if (max === undefined) throw new ArcGISError("gauge: give max (the layer returned no value for it).", "bad_argument");
 			w = gaugeWidget(l, s, s.max ?? Math.max(max, (s.min ?? 0) + 1), look);
 		}
 		else if (s.type === "pie") {
 			w = pieWidget(l, s, await categories(ctx, l, fieldOf(l.info, s.field, "pie chart (field = the category)")), look);
-			meta.set(w.id, { category: fieldOf(l.info, s.field, "pie") });
+			meta.set(w.id, { category: fieldOf(l.info, s.field, "pie"), layer: l });
 		} else if (s.type === "bar" || s.type === "line") {
 			const splits = s.split_by ? await categories(ctx, l, fieldOf(l.info, s.split_by, `${s.type} chart split_by`)) : [];
 			w = serialWidget(l, s, s.type === "line", look, splits);
-			meta.set(w.id, { category: fieldOf(l.info, s.field, s.type) });
+			meta.set(w.id, { category: fieldOf(l.info, s.field, s.type), layer: l });
 		} else if (s.type === "list" && s.group_by) {
 			const g = groupedListWidget(l, s, orgHome(self, ctx.props.portal), look);
 			w = g.list;
 			arcade.push(g.arcade);
-			meta.set(w.id, { groupedBy: g.group });
+			meta.set(w.id, { groupedBy: g.group, layer: l });
 		} else if (s.type === "list") w = listWidget(l, s, look);
 		else if (s.type === "table") w = tableWidget(l, s);
 		else if (s.type === "details") w = detailsWidget(l, mapW?.id ?? null, s);
@@ -838,17 +940,27 @@ export async function createDashboard(ctx: Ctx, args: AppArgs) {
 		} else if (s.type === "text") w = textWidget(String(s.text ?? s.title ?? "").replace(/<\s*script/gi, ""));
 		else if (s.type === "embed") w = embedWidget(s);
 		else throw new ArcGISError(`Unknown widget type '${(s as any).type}'.`, "bad_argument");
+		if (DATA_TYPES.has(w.type) && !meta.has(w.id)) meta.set(w.id, { layer: l });
 		widgets.push(w);
 		placeWidget(columns, w.id, s);
 	}
-	// the map's own copy of the data layer, so selections can filter what the map draws
-	const mapLayerId = !mapW ? null : l.mapId ? String(l.source.layerId)
-		: (mapData?.operationalLayers ?? []).find((o: any) => sameUrl(o.url, l.url))?.id ?? null;
-	const wired = args.interactive === false ? null
-		: wireActions(widgets, mapW ? { widget: mapW, layerId: mapLayerId } : null, args.extent_filter ?? true, meta);
+	// the map's own copy of each data layer, so selections can filter what the map draws
+	const used = [...new Map([...widgetLayers.filter((_, i) => DATA_TYPES.has(widgets[i].type)), ...selectorLayers].map((x) => [keyOf(x), x])).values()];
+	const mapWiring: MapWiring | null = mapW ? { widget: mapW, layers: used.flatMap((x) => {
+		const id = x.mapId === map?.id ? String(x.source.layerId) : (mapData?.operationalLayers ?? []).find((o: any) => sameUrl(o.url, x.url))?.id;
+		return id ? [{ layer: x, id: String(id) }] : [];
+	}) } : null;
+	const hasField = (name: string) => used.some((x) => (x.info.fields ?? []).some((f: any) => f.name.toLowerCase() === name.toLowerCase()));
+	for (const lk of links) {
+		if (!hasField(lk.from) || !hasField(lk.to)) {
+			throw new ArcGISError(`links: '${lk.from}' and '${lk.to}' must each be a field of one of the dashboard's layers.`, "bad_argument");
+		}
+	}
+	const wired = args.interactive === false ? null : wireActions(widgets, mapWiring, args.extent_filter ?? true, meta, links);
 	const range = (i: number) => (stats[`MAX_${i}`] > stats[`MIN_${i}`] ? { min: stats[`MIN_${i}`], max: stats[`MAX_${i}`] } : undefined);
-	const selectors = selectorSpecs.map((sp, i) => ({ widget: selectorWidget(l, sp, range(i)), field: fieldOf(l.info, sp.field, "selector") }));
-	const selected = wireSelectors(selectors, widgets, mapW ? { widget: mapW, layerId: mapLayerId } : null, meta);
+	const selectors = selectorSpecs.map((sp, i) => ({ widget: selectorWidget(selectorLayers[i], sp, range(i)),
+		field: fieldOf(selectorLayers[i].info, sp.field, "selector"), layer: selectorLayers[i] }));
+	const selected = wireSelectors(selectors, widgets, mapWiring, meta, links);
 	const at = args.selectors_at ?? (selectors.length > 2 ? "sidebar" : "header");
 	const sidebarTitle = args.sidebar_title ? `<p><strong><span style="font-size:16px;">${esc(args.sidebar_title)}</span></strong></p>` : "";
 	const data = { version: "5.1.0", authoringApp: "ArcGIS Dashboards", authoringAppVersion: "5.1.0", maxPaginationRecords: 50000,
@@ -874,7 +986,10 @@ export async function createDashboard(ctx: Ctx, args: AppArgs) {
 		if (theme === "navy") await addResource(ctx, id, "themes/user.json", JSON.stringify(NAVY_THEME));
 		const item = await ctx.request(`${base(ctx)}/content/items/${id}`);
 		return { app: itemCard(item, ctx.props.portal), open: `${orgHome(self, ctx.props.portal)}/apps/dashboards/${id}`,
-			widgets: widgets.map((w) => ({ type: w.type, name: w.name })), data_from: l.mapId ? "the web map's layer" : "the feature layer",
+			widgets: widgets.map((w) => ({ type: w.type, name: w.name })),
+			data_from: used.map((x) => ({ layer: x.info.name ?? x.url, through: x.mapId ? "the web map" : "its item",
+				widgets: widgets.filter((w) => meta.get(w.id)?.layer && keyOf(meta.get(w.id)!.layer!) === keyOf(x)).length,
+				on_map: Boolean(mapWiring?.layers.some((m) => keyOf(m.layer) === keyOf(x))) })),
 			theme, style: look.exec ? "executive" : "classic", interactive: wired ?? false,
 			...(selected.length ? { selectors: { at, wired: selected } } : {}) };
 	});
