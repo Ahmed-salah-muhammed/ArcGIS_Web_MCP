@@ -193,7 +193,7 @@ export const TOOL_DOCS: ToolDoc[] = [
 		],
 		inputs: [
 			{ name: "kind=instant", does: "An Instant App of a web map from any template (Basic, Sidebar...)" },
-			{ name: "kind=dashboard", does: "An interactive dashboard of a layer: indicators, pie / bar / line charts (by date too), list, table, map, legend, details, embedded pages, in tabs if you like; selecting in one widget filters the others and the map; automatic when no widgets are given" },
+			{ name: "kind=dashboard", does: "An interactive dashboard of a layer: indicators (compared with last year or any reference), gauges, pie / bar / line charts (by date, split into stacked series, with target lines), list, table (cells coloured by condition), map, legend, details, embedded pages and images, in tabs if you like; category / date / number selectors in the header or a sidebar; filters on text, numbers and dates; selecting in one widget filters the others and the map; automatic when no widgets are given" },
 			{ name: "kind=experience", does: "An Experience Builder app from one of 50 templates, with your web map in its maps" },
 			{ name: "kind=storymap", does: "A story with a cover, headings, text and maps, in one of six themes" },
 			{ name: "kind=survey", does: "A Survey123 draft that opens in the web designer (portal_survey123 also makes XLSForms for Connect)" },
@@ -203,6 +203,7 @@ export const TOOL_DOCS: ToolDoc[] = [
 		examples: ["Make a dashboard of the inspections layer with a count, a pie by status and a table.",
 			"An interactive dashboard of the users layer: owners and users counts in tabs, a pie by governorate, sign-ups per day.",
 			"An executive-style dashboard: counts with icons, a list per city with totals, a heatmap tab next to the map.",
+			"A dashboard with a sidebar of filters (status, last 7 / 30 days, minimum cost), this year's count vs last year, and a gauge of work done.",
 			"Create a Sidebar Instant App of my parks map.", "Build a story about the river project with the flood map in the middle."],
 		notes: ["Apps are created private in your content; share them with portal_share."],
 	},

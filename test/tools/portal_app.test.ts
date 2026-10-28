@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { autoWidgets, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
+import { autoWidgets, chartGuides, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
+import { arcadeTest, filterSql } from "../../src/tools/portal_app/filters";
 import { formFor, inputFor } from "../../src/tools/portal_app/fieldmaps";
 import { app } from "../../src/tools/portal_app/handler";
 import { templateName } from "../../src/tools/portal_app/instant";
@@ -181,14 +182,33 @@ describe("portal_app: interactive dashboards", () => {
 		expect(still.widgets[1].events).toBeDefined();
 	});
 
-	it("widget filters: equal / is_in on text fields, coded values by their description", () => {
+	it("widget filters: equal / is_in, coded values by their description; numbers and dates by operator", () => {
 		expect(widgetFilter(layer, { Role: "owner" })).toEqual({ type: "filterGroup", condition: "OR", rules: [{ type: "filterGroup",
 			condition: "AND", rules: [{ type: "filterRule", field: { name: "Role", type: "string" }, operator: "equal",
 				constraint: { type: "value", value: "owner" } }] }] });
 		expect(widgetFilter(layer, { status: ["Open", "C"] })!.rules[0].rules[0]).toMatchObject({ field: { name: "STATUS" },
 			operator: "is_in", constraint: { type: "values", values: ["O", "C"] } });
 		expect(widgetFilter(layer, undefined)).toBeUndefined();
-		expect(() => widgetFilter(layer, { COST: "5" })).toThrow(/not a text field/);
+		const rules = (f: any) => widgetFilter(layer, f)!.rules[0].rules;
+		expect(rules({ COST: { op: ">=", value: "5" }, Role: { op: "!=", value: "guest" } })).toEqual([
+			{ type: "filterRule", field: { name: "COST", type: "double" }, operator: "greater_or_equal", constraint: { type: "value", value: 5 } },
+			{ type: "filterRule", field: { name: "Role", type: "string" }, operator: "is_not_in", constraint: { type: "values", values: ["guest"] } }]);
+		expect(rules({ JoinDate: { op: "last", value: 7, unit: "day" } })[0]).toEqual({ type: "filterRule", field: { name: "JoinDate", type: "date" },
+			operator: "is_within_last", constraint: { type: "relativeDate", unit: "day", value: 7 } });
+		expect(rules({ JoinDate: { op: "this_year" }, NAME: { op: "not_null" } })).toMatchObject([
+			{ operator: "is_on", constraint: { type: "period", value: "thisYear" } }, { operator: "is_not_null", constraint: { type: "nil" } }]);
+		expect(() => widgetFilter(layer, { Role: { op: ">", value: 1 } })).toThrow(/needs a number field/);
+		expect(() => widgetFilter(layer, { COST: { op: "last", value: 1, unit: "day" } })).toThrow(/needs a date field/);
+		expect(() => widgetFilter(layer, { JoinDate: "2024-01-01" })).toThrow(/Date fields filter with/);
+		expect(() => widgetFilter(layer, { COST: "cheap" })).toThrow(/not a number/);
+		expect(() => widgetFilter(layer, { JoinDate: { op: "last", value: 3, unit: "week" as any } })).toThrow(/unit/);
+		expect(filterSql(layer, { STATUS: "Open", COST: { op: "<=", value: 9 }, Role: ["a'b", "c"] }))
+			.toBe("STATUS = 'O' AND COST <= 9 AND Role IN ('a''b', 'c')");
+		expect(() => filterSql(layer, { JoinDate: { op: "this_year" } })).toThrow(/grouped list cannot filter/);
+		expect(arcadeTest(layer, "COST", { op: ">", value: 10 })).toBe('$datapoint["COST"] > 10');
+		expect(arcadeTest(layer, "STATUS", ["Open", "Closed"])).toBe('Includes(["O","C"], $datapoint["STATUS"])');
+		expect(arcadeTest(layer, "JoinDate", { op: "last", value: 2, unit: "month" }))
+			.toBe(`!IsEmpty($datapoint["JoinDate"]) && DateDiff(Now(), $datapoint["JoinDate"], 'months') <= 2`);
 	});
 
 	it("tabs, columns, colours, date bins, an embedded page and the header", async () => {
@@ -225,6 +245,147 @@ describe("portal_app: interactive dashboards", () => {
 		await expect(app(ctx, { kind: "dashboard", target: ID, logo_url: "javascript:1" })).rejects.toThrow(/logo_url/);
 		expect(sent(calls, "/addItem")).toHaveLength(0);
 		expect(autoWidgets(layer, false).map((w) => `${w.type}:${w.field ?? ""}`)).toContain("line:JoinDate");
+	});
+});
+
+describe("portal_app: professional dashboards", () => {
+	const layer = { name: "users", objectIdField: "OBJECTID", displayField: "NAME", fields: [
+		{ name: "OBJECTID", type: "esriFieldTypeOID" }, { name: "NAME", type: "esriFieldTypeString" },
+		{ name: "Role", type: "esriFieldTypeString", alias: "User role" }, { name: "Team", type: "esriFieldTypeString" },
+		{ name: "Units", type: "esriFieldTypeInteger" }, { name: "JoinDate", type: "esriFieldTypeDate" }] };
+	const query = (p: Record<string, unknown>) => {
+		if (p.groupByFieldsForStatistics === "Team") return { features: [{ attributes: { Team: "A", n: 4 } }, { attributes: { Team: "B", n: 2 } }] };
+		if (p.groupByFieldsForStatistics) return { features: [{ attributes: { Role: "owner", n: 5 } }] };
+		return { features: [{ attributes: { GAUGE_0: 42, MIN_2: 2, MAX_2: 80 } }] };
+	};
+	const routes = () => ({ ...common({
+		[`/content/items/${ID}`]: () => ({ id: ID, type: "Feature Service", url: SVC }),
+		[SVC]: () => ({ layers: [{ id: 0, name: "users" }] }),
+		[`${SVC}/0`]: () => layer,
+		[`${SVC}/0/query`]: query,
+	}), [`/content/items/${MAP}/data`]: () => ({ operationalLayers: [{ id: "op-users", title: "Users", url: `${SVC}/0` }] }) });
+	const build = async (args: Record<string, unknown>) => {
+		silence();
+		const { ctx, calls } = fakeCtx(routes());
+		const out: any = await app(ctx, { kind: "dashboard", ...args } as any);
+		const data = json(sent(calls, "/addItem")[0].params.text);
+		const byName = (name: string) => data.desktopView.widgets.find((w: any) => w.name === name);
+		return { out, data, calls, byName };
+	};
+
+	it("selectors filter every widget and the map: category by its field, date and number through filterField", async () => {
+		const { out, data, byName, calls } = await build({ target: ID, webmap_id: MAP, sidebar_title: "Filters <b>",
+			widgets: [{ type: "map" }, { type: "indicator", title: "Users", compare_to: {} }, { type: "table", title: "T" }],
+			selectors: [{ type: "category", field: "role", multiple: true }, { type: "date", field: "JoinDate", title: "Joined" },
+				{ type: "number", field: "Units", step: 0.5 }] });
+		const [map, users, table] = data.desktopView.widgets;
+		expect(data.desktopView.header.selectors).toEqual([]);
+		const sidebar = data.desktopView.sidebar;
+		expect(sidebar).toMatchObject({ type: "sidebar", title: '<p><strong><span style="font-size:16px;">Filters &lt;b&gt;</span></strong></p>' });
+		const [role, joined, units] = sidebar.selectors;
+		expect(role).toMatchObject({ dashboardItemType: "selector", type: "categorySelectorWidget", label: "User role",
+			category: { type: "groupByValues" }, selection: { operator: "is_in", type: "multiple", allowNone: true, noneLabel: "All" },
+			displayType: "list", presentationMode: "dropdown" });
+		expect(role.datasets[0]).toMatchObject({ groupByFields: ["Role"], statisticDefinitions: [{ onStatisticField: "Role", statisticType: "count" }] });
+		expect(role.events[0].actions[0].targets).toEqual([
+			{ targetId: `${users.id}#main`, by: "whereClause", requiresSelection: false },
+			{ targetId: `${users.id}#reference`, by: "whereClause", requiresSelection: false },
+			{ targetId: `${table.id}#main`, by: "whereClause", requiresSelection: false },
+			{ targetId: `${map.id}#op-users`, by: "whereClause", requiresSelection: false, fieldMap: [{ sourceName: "Role", targetName: "Role" }] }]);
+		const viaFilterField = [{ sourceName: "filterField", targetName: "JoinDate" }];
+		expect(joined.events[0].actions[0].targets).toContainEqual({ targetId: `${table.id}#main`, by: "whereClause", requiresSelection: false,
+			fieldMap: viaFilterField });
+		expect(joined.events[0].actions[0].targets).toContainEqual({ targetId: `${map.id}#op-users`, by: "whereClause", requiresSelection: false,
+			fieldMap: viaFilterField });
+		const names = joined.definedOptions.namedFilters.map((f: any) => f.displayName);
+		expect(names).toEqual(["24 hours", "7 days", "30 days", "12 months", "All"]);
+		expect(joined).toMatchObject({ optionType: "definedOptions", definedOptions: { defaultSelection: "last", allowNone: false } });
+		expect(joined.definedOptions.namedFilters[1].filter.rules[0].rules[0]).toEqual({ type: "filterRule",
+			field: { name: "filterField", type: "esriFieldTypeDate" }, operator: "is_within_last", constraint: { type: "relativeDate", unit: "day", value: 7 } });
+		expect(joined.definedOptions.namedFilters[4].filter.rules[0].rules[0]).toMatchObject({ operator: "is_not_null", constraint: { type: "nil" } });
+		// the range comes from the layer: one statistics query for every default that needs it
+		expect(units).toMatchObject({ type: "numericSelectorWidget", operator: "greater_or_equal", firstDefault: 2, increment: 0.5, precision: 1,
+			constraint: { type: "fixed", lowerLimit: 2, upperLimit: 80 } });
+		const stats = sent(calls, "/0/query").filter((c) => !c.params.groupByFieldsForStatistics);
+		expect(stats).toHaveLength(1);
+		expect(stats[0].params.outStatistics).toEqual([{ statisticType: "min", onStatisticField: "Units", outStatisticFieldName: "MIN_2" },
+			{ statisticType: "max", onStatisticField: "Units", outStatisticFieldName: "MAX_2" }]);
+		expect(out.selectors).toMatchObject({ at: "sidebar", wired: [{ selector: "User role", field: "Role" }, { field: "JoinDate" }, { field: "Units" }] });
+		expect(byName("T")).toBe(table);
+	});
+
+	it("up to two selectors go in the header; a calendar date and button categories; grouped lists only by their field", async () => {
+		const { data, out } = await build({ target: ID, widgets: [{ type: "list", group_by: "Role", title: "Per role" }, { type: "indicator" }],
+			selectors: [{ type: "category", field: "Role", display: "buttons" }, { type: "date", field: "JoinDate", display: "calendar" }] });
+		const [list] = data.desktopView.widgets;
+		const [role, date] = data.desktopView.header.selectors;
+		expect(data.desktopView.sidebar).toBeUndefined();
+		expect(role).toMatchObject({ displayType: "button_bar", presentationMode: "inline", selection: { operator: "equal", type: "single" } });
+		expect(role.events[0].actions[0].targets).toContainEqual({ targetId: `${list.id}#main`, by: "whereClause", requiresSelection: false,
+			fieldMap: [{ sourceName: "Role", targetName: "Role" }] });
+		expect(date).toMatchObject({ optionType: "datePicker", datePickerOption: { displayType: "calendar", operator: "is_on" } });
+		expect(JSON.stringify(date.events)).not.toContain(list.id);
+		expect(out.selectors.wired[1]).toMatchObject({ field: "JoinDate", does_not_filter: ["Per role"] });
+	});
+
+	it("indicator vs a reference, gauge, split and stacked bars with target lines, highlights, sorting, image, menu", async () => {
+		const { data, byName } = await build({ target: ID, logo_url: "https://x.example/l.png", logo_link: "https://x.example",
+			menu_links: [{ label: "About", url: "https://x.example/about" }],
+			widgets: [{ type: "gauge", title: "Done", filter: { Role: "owner" } },
+				{ type: "indicator", title: "This year", filter: { JoinDate: { op: "this_year" } }, compare_to: { JoinDate: { op: "last_year" } },
+					higher_is_better: false },
+				{ type: "bar", field: "Role", split_by: "Team", stacked: "stacked", labels: true, title: "Stack",
+					lines: [{ value: 10, label: "Target" }, { value: 0, to: 5, color: "#36a852" }] },
+				{ type: "table", title: "Tab", fields: ["NAME"], sort_by: "JoinDate desc",
+					highlight: [{ field: "Units", when: { op: ">=", value: 50 }, background: "#ffdddd" }, { field: "Units", when: { op: "<=", value: 5 }, color: "#008800" }] },
+				{ type: "list", title: "Lst", highlight: [{ field: "Role", when: "owner", color: "#ff0000" }] },
+				{ type: "embed", url: "https://x.example/photo.JPG?v=2", title: "Pic" }] });
+		const gauge = byName("Done");
+		expect(gauge.datasets.slice(0, 2)).toEqual([{ type: "staticDataset", name: "min", data: 0 }, { type: "staticDataset", name: "max", data: 42 }]);
+		expect(gauge).toMatchObject({ type: "gaugeWidget", style: "progress", chartConfig: { subType: "statisticGauge",
+			series: [{ type: "gaugeSeries", x: "COUNT_OBJECTID" }] } });
+		expect(gauge.datasets[2].filter.rules[0].rules[0].constraint).toEqual({ type: "value", value: "owner" });
+		const year = byName("This year");
+		expect(year.comparison).toBe("statistic");
+		expect(year.datasets.map((d: any) => d.name)).toEqual(["main", "reference"]);
+		expect(year.datasets[1].filter.rules[0].rules[0].constraint).toEqual({ type: "period", value: "lastYear" });
+		// lower is better: at or above the reference is red, below it green
+		expect(year.defaultSettings.bottomSection.textInfo).toMatchObject({ text: "vs {calculated/reference} ({calculated/percentChange})", fillColor: "#d83020" });
+		expect(year.belowReferenceSettings.bottomSection.textInfo.fillColor).toBe("#36a852");
+		const stack = byName("Stack");
+		expect(stack.datasets[0].groupByFields).toEqual(["Role", "Team"]);
+		expect(stack.splitBy).toMatchObject({ fieldName: "Team", missingSeriesTemplate: { id: "__split-by-template__", x: "Role" } });
+		expect(stack.chartConfig.series.map((x: any) => [x.id, x.name, x.y])).toEqual([["A", "A", "A"], ["B", "B", "B"]]);
+		expect(stack.chartConfig).toMatchObject({ stackedType: "stacked", legend: { visible: true } });
+		expect(stack.chartConfig.series[0].dataLabels.visible).toBe(true);
+		expect(stack.chartConfig.axes[1].guides).toMatchObject([{ type: "chartGuide", start: 10, style: { type: "esriSLS" }, label: { text: "Target" } },
+			{ start: 0, end: 5, style: { type: "esriSFS", color: [54, 168, 82, 76.5] } }]);
+		const table = byName("Tab");
+		expect(table.datasets[0]).toMatchObject({ orderByFields: ["JoinDate DESC"], outFields: ["NAME", "Units"] });
+		expect(table.arcadeEnabled).toBe(true);
+		expect(table.expression).toContain(`backgroundColor: IIf($datapoint["Units"] >= 50, '#ffdddd', '')`);
+		expect(table.expression).toContain(`textColor: IIf($datapoint["Units"] <= 5, '#008800', '')`);
+		const list = byName("Lst");
+		expect(list.expression).toContain(`if ($datapoint["Role"] == "owner") {\n  textColor = '#ff0000';`);
+		expect(list.datasets[0].outFields).toEqual(["NAME", "Role"]);
+		expect(byName("Pic").contentType).toBe("image");
+		expect(data.desktopView.header).toMatchObject({ logoURL: "https://x.example", menuContents: [{ key: "About", link: "https://x.example/about" }] });
+	});
+
+	it("refuses what a dashboard cannot show before anything is created", async () => {
+		const { ctx, calls } = fakeCtx(routes());
+		const make = (args: Record<string, unknown>) => app(ctx, { kind: "dashboard", target: ID, ...args } as any);
+		await expect(make({ widgets: [{ type: "bar", field: "Role", stacked: "stacked" }] })).rejects.toThrow(/stacked needs split_by/);
+		await expect(make({ widgets: [{ type: "bar", field: "Role", split_by: "role" }] })).rejects.toThrow(/split_by must differ/);
+		await expect(make({ widgets: [{ type: "gauge", min: 50, max: 10 }] })).rejects.toThrow(/max \(10\) must be above min/);
+		await expect(make({ widgets: [{ type: "table", highlight: [{ field: "Units", when: 1 }] }] })).rejects.toThrow(/color and\/or background/);
+		await expect(make({ widgets: [{ type: "table", sort_by: "Units sideways" }] })).rejects.toThrow(/sort_by/);
+		await expect(make({ selectors: [{ type: "date", field: "Role" }] })).rejects.toThrow(/date selector cannot filter 'Role'/);
+		await expect(make({ selectors: [{ type: "number", field: "JoinDate" }] })).rejects.toThrow(/number selector cannot/);
+		await expect(make({ selectors: [{ type: "category", field: "Role", display: "calendar" }] })).rejects.toThrow(/calendar is for date/);
+		await expect(make({ menu_links: [{ label: "x", url: "http://x.example" }] })).rejects.toThrow(/menu_links\[0\]\.url must be an https/);
+		expect(sent(calls, "/addItem")).toHaveLength(0);
+		expect(() => chartGuides([{ value: 5, to: 2 }])).toThrow(/"to" a number above it/);
 	});
 });
 
