@@ -36,7 +36,14 @@ export const tool = defineTool({
 		+ "table filters the other widgets and the map and zooms to it, selecting on the map filters them), extent_filter (default true: "
 		+ "moving the map filters them); style classic|executive (dark panels with icons, donuts with outside labels, smooth area "
 		+ "lines; navy theme); theme light|dark|navy; subtitle; logo_url) | "
-		+ "experience (Experience Builder: template name, webmap_id bound to its maps, theme_color #rrggbb; publish default true) | "
+		+ "experience (Experience Builder. With widgets: an app built from them on a grid page with a header, every widget bound to "
+		+ "a layer of webmap_id (layer = title/id/index): map | legend | layers | basemaps | table (fields) | bar | line | pie (donut) "
+		+ "(field, value_field, statistic count|sum|min|max, color, rotated, labels, period) | list (field, fields) | filter "
+		+ "(filters [{label, where {FIELD: condition}} or {label, ask: FIELD}]) | indicator (statistic count|sum|min|max of field, "
+		+ "live) | details | text | image | embed (url); column left|center|right|bottom, tab, title; selecting in tables/lists "
+		+ "zooms the map, selecting in charts filters the map, tables and lists; title, subtitle, logo_url, header_color, theme "
+		+ "default|master|meadow|velvet|astro, theme_color. Without widgets: a template by name with webmap_id bound to its maps, "
+		+ "theme_color; publish default true) | "
 		+ "storymap (blocks = [{type: heading (level 2-4)|text|quote|bullets|numbered (items)|image (url, size, link)|map (webmap_id, size)|"
 		+ "embed (url, display card|inline)|video (url)|button (text, url)|separator|number (value, text)|swipe (left/right: two webmap_id or "
 		+ "two image)|sidecar (style docked|floating|slideshow, slides [{heading, text, webmap_id|image|url}])|timeline (style waterfall|"
@@ -87,6 +94,9 @@ export const tool = defineTool({
 			values: z.array(z.object({ label: z.string().max(40), field: z.string().optional(), statistic: z.enum(STATISTICS).optional(),
 				color: z.string().optional() })).max(4).optional().describe("list with group_by: the numbers on each row; no field = count"),
 			webmap_id: z.string().optional().describe("map: another web map that moves with the main one"),
+			donut: z.boolean().optional().describe("experience pie: a hole in the middle"),
+			filters: z.array(z.object({ label: z.string().max(60), where: conditions.optional(), ask: z.string().optional() })).max(12).optional()
+				.describe("experience filter widget: [{label, where: {FIELD: condition}}] presets, or [{label, ask: FIELD}] asking the user"),
 			compare_to: conditions.optional().describe("indicator: the reference rows ({} = all), e.g. last year"),
 			compare_text: z.string().max(120).optional().describe("indicator: text under the value; {calculated/reference}, {calculated/percentChange}"),
 			higher_is_better: z.boolean().optional().describe("indicator with compare_to: green at/above the reference (default true)"),
@@ -165,6 +175,7 @@ export const tool = defineTool({
 			photos: z.union([z.boolean(), z.string().max(60)]).optional().describe("a photo element (layers with attachments)"),
 		}).optional().describe("fieldmaps: how the forms look and behave"),
 		theme_color: z.string().optional().describe("experience: the theme's primary colour #rrggbb"),
+		header_color: z.string().optional().describe("experience built from widgets: the header colour #rrggbb"),
 		redirect_uris: z.array(z.string()).optional().describe("exb_developer: default https://localhost:3001/"),
 		questions: z.array(z.object({
 			type: z.enum(QUESTION_TYPES),

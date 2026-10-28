@@ -4,9 +4,12 @@ import type { Condition, DateUnit } from "./filters";
 export const APP_KINDS = ["instant", "dashboard", "experience", "storymap", "survey", "fieldmaps", "exb_developer"] as const;
 export type AppKind = (typeof APP_KINDS)[number];
 
-export const WIDGET_TYPES = ["map", "indicator", "gauge", "pie", "bar", "line", "list", "table", "details", "legend", "text", "embed"] as const;
+export const WIDGET_TYPES = ["map", "indicator", "gauge", "pie", "bar", "line", "list", "table", "details", "legend", "text", "embed",
+	"filter", "layers", "basemaps", "image"] as const;
+/** Widget types only Experience Builder apps take. */
+export const EXB_ONLY = new Set(["filter", "layers", "basemaps", "image"]);
 export const STATISTICS = ["count", "sum", "avg", "min", "max"] as const;
-export const COLUMNS = ["left", "center", "right"] as const;
+export const COLUMNS = ["left", "center", "right", "bottom"] as const;
 export const PERIODS = ["day", "month", "year"] as const;
 export const STYLES = ["classic", "executive"] as const;
 export const ICONS = ["person", "people", "billboard", "screen", "check", "pin", "chart", "alert", "building"] as const;
@@ -70,6 +73,10 @@ export type WidgetSpec = {
 	highlight?: { field: string; when: Condition; color?: string; background?: string }[];
 	/** list / table: the order, "FIELD" or "FIELD desc". */
 	sort_by?: string;
+	/** experience pie: a hole in the middle. */
+	donut?: boolean;
+	/** experience filter widget: preset items ({label, where: {FIELD: condition}}) or items asking the user ({label, ask: FIELD}). */
+	filters?: { label: string; where?: Record<string, Condition>; ask?: string }[];
 };
 
 /** A dashboard selector: it filters every widget of the layer and the map's copy of it. */
@@ -185,6 +192,8 @@ export type AppArgs = {
 	form?: FormSpec;
 	/** experience: the theme's primary colour (#rrggbb). */
 	theme_color?: string;
+	/** experience built from widgets: the header's colour (#rrggbb). */
+	header_color?: string;
 	redirect_uris?: string[];
 	questions?: { type: string; label: string; choices?: (string | { value: string; label: string; filter?: string })[]; required?: boolean;
 		hint?: string; name?: string; group?: string; relevant?: string; constraint?: string; constraint_message?: string; calculation?: string;

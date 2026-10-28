@@ -4,6 +4,7 @@ import type { Ctx } from "../shared/context";
 import { audit } from "../shared/safety";
 import { createDashboard, WIDGET_HELP } from "./dashboard";
 import { registerExbDeveloper } from "./developer";
+import { EXB_WIDGET_HELP } from "./exb-build";
 import { createExperience, experienceTemplates } from "./experience";
 import { prepareFieldMaps } from "./fieldmaps";
 import { createInstant, instantTemplates, templateSettings } from "./instant";
@@ -26,7 +27,7 @@ export async function app(ctx: Ctx, args: AppArgs) {
 			if (!tpl) throw new ArcGISError(`No Instant Apps template '${args.template}'. Available: ${list.map((t) => t.name).join(", ")}`, "not_found");
 			return { kind, template: tpl, settings: await templateSettings(ctx, { ...tpl, typeKeywords: [] }) };
 		}
-		if (kind === "experience") return { kind, templates: experienceTemplates() };
+		if (kind === "experience") return { kind, templates: experienceTemplates(), build_from_widgets: EXB_WIDGET_HELP };
 		if (kind === "storymap") return { kind, themes: STORY_THEMES, blocks: BLOCK_HELP };
 		if (kind === "dashboard") return { kind, widgets: WIDGET_HELP };
 		throw new ArcGISError(`${kind} has no templates.`, "bad_argument");

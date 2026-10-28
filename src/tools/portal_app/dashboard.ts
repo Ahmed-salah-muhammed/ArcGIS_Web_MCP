@@ -32,7 +32,7 @@ import { addItem, addResource, orgHome, orRemove, portalSelf } from "../shared/i
 import { base, requireId, resolveLayerUrl } from "../shared/lookup";
 import { arcadeTest, filterRule, filterSql, widgetFilter } from "./filters";
 import type { AppArgs, COLUMNS, PERIODS, SelectorSpec, WidgetSpec } from "./types";
-import { ICONS } from "./types";
+import { EXB_ONLY, ICONS } from "./types";
 
 export { widgetFilter };
 
@@ -555,12 +555,14 @@ export function embedWidget(spec: WidgetSpec) {
 type Column = (typeof COLUMNS)[number];
 /** A widget id, or a tabbed panel of several. */
 export type LayoutEntry = string | { tabs: { id: string; tab: string }[] };
-const COLUMN_OF: Record<WidgetSpec["type"], Column> = { map: "center", table: "center", embed: "center", indicator: "left", gauge: "left",
+const COLUMN_OF: Partial<Record<WidgetSpec["type"], Column>> = { map: "center", table: "center", embed: "center", indicator: "left", gauge: "left",
 	list: "left", legend: "left", text: "left", pie: "right", bar: "right", line: "right", details: "right" };
 
 /** Puts a widget in its column; widgets of one column with a tab share that column's tabbed panel. */
 export function placeWidget(columns: Record<Column, LayoutEntry[]>, id: string, spec: Pick<WidgetSpec, "type" | "column" | "tab">) {
-	const col = columns[spec.column ?? COLUMN_OF[spec.type]];
+	// a dashboard has three columns: "bottom" widgets go under the center ones
+	const want = spec.column === "bottom" ? "center" : spec.column ?? COLUMN_OF[spec.type] ?? "left";
+	const col = columns[want];
 	const tab = spec.tab?.trim();
 	if (!tab) {
 		col.push(id);
@@ -893,7 +895,9 @@ export async function createDashboard(ctx: Ctx, args: AppArgs) {
 	}
 	const title = args.title ?? `${l.info.name ?? "Layer"} dashboard`;
 	const self = await portalSelf(ctx);
-	const columns: Record<Column, LayoutEntry[]> = { left: [], center: [], right: [] };
+	const columns: Record<Column, LayoutEntry[]> = { left: [], center: [], right: [], bottom: [] };
+	const exbOnly = specs.find((sp) => EXB_ONLY.has(sp.type));
+	if (exbOnly) throw new ArcGISError(`'${exbOnly.type}' widgets are for Experience Builder apps (kind=experience); dashboards use selectors.`, "bad_argument");
 	const widgets: any[] = [];
 	const arcade: any[] = [];
 	const meta: WidgetMeta = new Map();
