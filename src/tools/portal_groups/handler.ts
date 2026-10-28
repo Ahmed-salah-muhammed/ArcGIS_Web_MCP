@@ -1,7 +1,8 @@
 /**
- * portal_groups: search, get (members + items), create, update, delete (confirm). Verified on ArcGIS Online with a
- * throwaway private group. Adding/removing other members is left out of this version: it could not be verified
- * without a second account (portal_rest reaches community/groups/<id>/addUsers if needed).
+ * portal_groups: search, get (members + items), create, update, delete (confirm), and members: add_users (addUsers:
+ * members of your org, as an admin or the group's manager), invite_users (invite: they accept it themselves) and
+ * remove_users (removeUsers, confirm). Search..delete were verified on ArcGIS Online with a throwaway private group;
+ * the member actions follow the REST reference and report what ArcGIS refused (not_added, not_removed).
  */
 import { ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
@@ -10,6 +11,7 @@ import { base, resolveGroupId } from "../shared/lookup";
 import { audit, requireConfirm } from "../shared/safety";
 
 const ACCESS = new Set(["private", "org", "public"]);
+export const MAX_USERS = 25; // usernames per add/invite/remove call
 
 export function groupCard(g: any) {
 	return { id: g.id, title: g.title, owner: g.owner, access: g.access, isInvitationOnly: g.isInvitationOnly ?? null,
@@ -18,7 +20,9 @@ export function groupCard(g: any) {
 }
 
 export type GroupArgs = {
-	action?: "search" | "get" | "create" | "update" | "delete";
+	action?: "search" | "get" | "create" | "update" | "delete" | "add_users" | "invite_users" | "remove_users";
+	users?: string[];
+	as_managers?: boolean;
 	group?: string;
 	query?: string;
 	title?: string;
@@ -75,11 +79,53 @@ export async function groups(ctx: Ctx, args: GroupArgs) {
 		audit(ctx.props, { tool: "portal_groups", action, target: id, ok: Boolean(res.success) });
 		return { group: groupCard(await ctx.request(`${base(ctx)}/community/groups/${id}`)), updated: Boolean(res.success) };
 	}
+	if (action === "add_users" || action === "invite_users" || action === "remove_users") {
+		return members(ctx, action, id, title, args);
+	}
 	if (action === "delete") {
 		requireConfirm(args.confirm, `Deleting group '${title}'`, { id, title }, "Items stay; only the group and its sharing go.");
 		const res = await ctx.request(`${base(ctx)}/community/groups/${id}/delete`);
 		audit(ctx.props, { tool: "portal_groups", action, target: id, ok: Boolean(res.success) });
 		return { group: title, id, deleted: Boolean(res.success) };
 	}
-	throw new ArcGISError("action must be search | get | create | update | delete.", "bad_action");
+	throw new ArcGISError("action must be search | get | create | update | delete | add_users | invite_users | remove_users.",
+		"bad_action");
+}
+
+async function memberList(ctx: Ctx, id: string) {
+	const m = await ctx.request(`${base(ctx)}/community/groups/${id}/users`);
+	return { owner: m.owner, admins: m.admins ?? [], users: m.users ?? [] };
+}
+
+async function members(ctx: Ctx, action: "add_users" | "invite_users" | "remove_users", id: string, title: string, args: GroupArgs) {
+	const users = [...new Set((args.users ?? []).map((u) => String(u).trim()).filter(Boolean))];
+	if (!users.length) throw new ArcGISError("users (usernames) is required.", "bad_argument");
+	if (users.length > MAX_USERS) throw new ArcGISError(`At most ${MAX_USERS} users per call.`, "too_many");
+	const path = `${base(ctx)}/community/groups/${id}`;
+	const list = users.join(",");
+	if (action === "remove_users") {
+		requireConfirm(args.confirm, `Removing ${users.length} user(s) from group '${title}'`, { group: title, users },
+			"They lose access to what is shared only with this group.");
+		const res = await ctx.request(`${path}/removeUsers`, { users: list });
+		const notRemoved: string[] = res.notRemoved ?? [];
+		audit(ctx.props, { tool: "portal_groups", action, target: id, ok: !notRemoved.length, details: { users } });
+		return { group: title, id, removed: users.filter((u) => !notRemoved.includes(u)), not_removed: notRemoved.length ? notRemoved : null,
+			members: await memberList(ctx, id) };
+	}
+	if (action === "invite_users") {
+		const res = await ctx.request(`${path}/invite`, { users: list, role: args.as_managers ? "group_admin" : "group_member",
+			expiration: 20160 });
+		const notInvited: string[] = res.notInvited ?? [];
+		audit(ctx.props, { tool: "portal_groups", action, target: id, ok: Boolean(res.success) && !notInvited.length, details: { users } });
+		return { group: title, id, invited: Boolean(res.success) ? users.filter((u) => !notInvited.includes(u)) : [],
+			not_invited: notInvited.length ? notInvited : null, expires_in: "2 weeks",
+			next: "They see the invitation in ArcGIS (Groups > My invitations) and accept it." };
+	}
+	const res = await ctx.request(`${path}/addUsers`, args.as_managers ? { admins: list } : { users: list });
+	const notAdded: string[] = res.notAdded ?? [];
+	audit(ctx.props, { tool: "portal_groups", action, target: id, ok: !notAdded.length, details: { users } });
+	return { group: title, id, added: users.filter((u) => !notAdded.includes(u)), not_added: notAdded.length ? notAdded : null,
+		...(notAdded.length ? { hint: "Adding directly works for members of your organization when you may manage the group; "
+			+ "invite_users sends them an invitation instead." } : {}),
+		members: await memberList(ctx, id) };
 }

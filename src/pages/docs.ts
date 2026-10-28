@@ -87,8 +87,11 @@ export const TOOL_DOCS: ToolDoc[] = [
 			{ name: "create", does: "A new group (private by default)", confirm: "for public groups" },
 			{ name: "update", does: "Title, tags, description, access", confirm: "to make it public" },
 			{ name: "delete", does: "The group (its items stay)", confirm: "always" },
+			{ name: "add_users", does: "Members of your organization, straight in (as members or managers)" },
+			{ name: "invite_users", does: "An invitation they accept themselves" },
+			{ name: "remove_users", does: "Take people out of the group", confirm: "always" },
 		],
-		examples: ["Create a private group for the survey team."],
+		examples: ["Create a private group for the survey team.", "Add sara_gis and omar_gis to the survey team group."],
 	},
 	{
 		name: "portal_publish", category: "data",
