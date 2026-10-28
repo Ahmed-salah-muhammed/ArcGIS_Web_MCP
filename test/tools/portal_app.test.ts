@@ -1,6 +1,7 @@
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { autoWidgets, chartGuides, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
+import { autoWidgets, chartGuides, correspondingField, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
+import { gridLayout } from "../../src/tools/portal_app/exb-build";
 import { arcadeTest, filterSql } from "../../src/tools/portal_app/filters";
 import { formFor, inputFor } from "../../src/tools/portal_app/fieldmaps";
 import { app } from "../../src/tools/portal_app/handler";
@@ -464,6 +465,19 @@ describe("portal_app: dashboards on several layers", () => {
 		expect(byName("By status")).toBe(pie);
 	});
 
+	it("fields are shared across layers by their exact name, or by links in any case", () => {
+		const layer = (url: string, ...names: string[]) => ({ url, source: url, info: { fields: names.map((name) => ({ name })) }, mapId: url }) as any;
+		const parks = layer("https://x/parks/0", "AREA", "SUB_MUN");
+		const districts = layer("https://x/districts/0", "Area", "SUB_MUN", "Name");
+		expect(correspondingField(parks, "SUB_MUN", districts)).toBe("SUB_MUN");
+		// a district's Area is not a park's AREA
+		expect(correspondingField(parks, "AREA", districts)).toBeNull();
+		// ...unless links pair them, in any case
+		expect(correspondingField(parks, "AREA", districts, [{ from: "AREA", to: "Area" }])).toBe("Area");
+		expect(correspondingField(parks, "AREA", districts, [{ from: "area", to: "name" }])).toBe("Name");
+		expect(correspondingField(parks, "AREA", parks)).toBe("AREA");
+	});
+
 	it("without a shared field, other layers are not filtered and the selector says so; unknown links are refused", async () => {
 		const { data, out } = await build({ widgets: [{ type: "pie", field: "STATUS", title: "P" }, { type: "indicator", layer: 1, title: "Govs" }],
 			selectors: [{ type: "category", field: "STATUS" }] });
@@ -727,7 +741,7 @@ describe("portal_app: Experience Builder apps built from widgets", () => {
 		expect(left.children.map(node).map((n: any) => n.gridType)).toEqual([3, 3, 2]);
 		expect(left.children.map(node)[2].children.map(node).map((n: any) => n.widgetId)).toEqual([list.id, byLabel("Legend").id]);
 		expect(right.children.map(node).map((n: any) => n.widgetId)).toEqual([pie.id, bar.id, byLabel("Details").id]);
-		expect(bottomRow.children.map(node)[0]).toMatchObject({ widgetId: table.id, hasItemHeader: true });
+		expect(bottomRow).toMatchObject({ type: "WIDGET", widgetId: table.id, hasItemHeader: true });
 		expect(grid.setting).toMatchObject({ mainItemId: map.id, splitSize: 10 });
 		// the header: title on a light colour in dark text, the logo
 		expect(config.header).toMatchObject({ height: { LARGE: 64 }, backgroundColor: "#ffffff", textColor: "#1a1a1a" });
@@ -737,6 +751,22 @@ describe("portal_app: Experience Builder apps built from widgets", () => {
 		expect(out).toMatchObject({ built_from: "widgets", theme_color: "#1a4780" });
 		expect(out.interactions).toHaveLength(4);
 		expect(String(sent(calls, "/addItem")[0].params.typeKeywords)).toContain("template:blankfullscreengrid");
+	});
+
+	it("the bottom row keeps its tabs: widgets with one tab share a tabbed panel, the others stand beside it", () => {
+		const e = (id: string, tab?: string) => ({ id, tab, header: true });
+		const grid = gridLayout({ left: [], center: [e("m")], right: [], bottom: [e("t1", "A"), e("t2", "A"), e("c")] }, "m", { bg: "#000000", fg: "#ffffff" });
+		const node = (id: string) => grid.content[id];
+		const [main, bottom] = node(grid.setting.rootItem).children.map(node);
+		expect(main).toMatchObject({ widgetId: "m", gridType: 3 });
+		expect(bottom.gridType).toBe(0);
+		const [tabs, chart] = bottom.children.map(node);
+		expect(tabs.gridType).toBe(2);
+		expect(tabs.children.map(node).map((n: any) => n.widgetId)).toEqual(["t1", "t2"]);
+		expect(chart).toMatchObject({ widgetId: "c", gridType: 3 });
+		const only = gridLayout({ left: [], center: [], right: [], bottom: [e("x")] }, null, { bg: "#000000", fg: "#ffffff" });
+		expect(only.content[only.setting.rootItem]).toMatchObject({ widgetId: "x" });
+		expect(only.content[only.setting.rootItem].parent).toBeUndefined();
 	});
 
 	it("checks widgets, filters and layers before anything is created; dashboards refuse experience-only widgets", async () => {

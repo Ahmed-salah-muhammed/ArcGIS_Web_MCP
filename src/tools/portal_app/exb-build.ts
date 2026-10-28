@@ -417,7 +417,7 @@ export function gridLayout(columns: Record<Column, Entry[]>, mainItemId: string 
 	const next = () => String(n++);
 	const leaf = (e: Entry, width: number, parent: string) => {
 		const id = next();
-		content[id] = { type: "WIDGET", widgetId: e.id, gridType: 3, bbox: { width }, parent, expandable: true, hasItemHeader: e.header,
+		content[id] = { type: "WIDGET", widgetId: e.id, gridType: 3, bbox: { width }, ...(parent ? { parent } : {}), expandable: true, hasItemHeader: e.header,
 			...(e.header ? { headerBackground: header.bg, headerForeground: header.fg } : {}) };
 		return id;
 	};
@@ -428,8 +428,11 @@ export function gridLayout(columns: Record<Column, Entry[]>, mainItemId: string 
 		if (gridType === 2) content[id].activeTab = 0;
 		return id;
 	};
-	/** One column: its widgets stacked, those with a tab in one tabbed panel where the first of them stands. */
-	const column = (entries: Entry[], width: number, parent: string) => {
+	/**
+	 * One column: its widgets stacked (or, for the bottom row, side by side), those with a tab in one tabbed panel where
+	 * the first of them stands.
+	 */
+	const column = (entries: Entry[], width: number, parent: string, gridType = 1) => {
 		const groups: (Entry | Entry[])[] = [];
 		for (const e of entries) {
 			if (!e.tab) { groups.push(e); continue; }
@@ -439,7 +442,7 @@ export function gridLayout(columns: Record<Column, Entry[]>, mainItemId: string 
 		const one = (g: Entry | Entry[], w: number, p: string) => (Array.isArray(g)
 			? (g.length === 1 ? leaf(g[0], w, p) : split(2, w, p, (id) => g.map((e) => leaf(e, 100, id)))) : leaf(g, w, p));
 		if (groups.length === 1) return one(groups[0], width, parent);
-		return split(1, width, parent, (id) => groups.map((g) => one(g, 100 / groups.length, id)));
+		return split(gridType, width, parent, (id) => groups.map((g) => one(g, 100 / groups.length, id)));
 	};
 	const widths: Record<string, number> = { left: 25, center: 50, right: 25 };
 	const main = (["left", "center", "right"] as const).filter((c) => columns[c].length);
@@ -449,8 +452,8 @@ export function gridLayout(columns: Record<Column, Entry[]>, mainItemId: string 
 	const bottom = columns.bottom;
 	let root: string;
 	if (!bottom.length) root = row(null, 100);
-	else if (!main.length) root = split(0, 100, null, (id) => bottom.map((e) => column([e], 100 / bottom.length, id)));
-	else root = split(1, 100, null, (id) => [row(id, 65), split(0, 35, id, (b) => bottom.map((e) => column([e], 100 / bottom.length, b)))]);
+	else if (!main.length) root = column(bottom, 100, "", 0);
+	else root = split(1, 100, null, (id) => [row(id, 65), column(bottom, 35, id, 0)]);
 	return { type: "GRID", content, order: [], setting: { rootItem: root, ...(mainItemId ? { mainItemId } : {}),
 		style: { padding: { number: [10, 10, 10, 10], unit: "px" } }, splitSize: 10 } };
 }
