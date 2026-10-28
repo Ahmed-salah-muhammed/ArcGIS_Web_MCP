@@ -574,7 +574,72 @@ describe("portal_app: StoryMaps", () => {
 			mapLayers: [{ id: "l1", title: "Parks", visible: false }] });
 		expect(Object.values<any>(story.resources).find((r) => r.type === "story-theme").data.themeId).toBe("obsidian");
 		expect(calls.at(-2)!.url).toBe(`https://storymaps.arcgis.com/stories/${NEW}/publish`);
-		expect(out).toMatchObject({ open: `https://storymaps.arcgis.com/stories/${NEW}`, sections: 4 });
+		expect(out).toMatchObject({ open: `https://storymaps.arcgis.com/stories/${NEW}`, blocks: 4 });
+	});
+
+	it("blocks: rich text, lists, images, embeds, buttons, numbers, swipe, sidecar, timeline; cover image and navigation", async () => {
+		silence();
+		const { ctx, calls } = fakeCtx(common({
+			"storymaps.arcgis.com/version": () => ({ version: "26.39.1367" }),
+			[`/content/items/${MAP}/data`]: () => ({ operationalLayers: [] }),
+			[`/stories/${NEW}/publish`]: () => ({ success: true }),
+		}));
+		const out: any = await app(ctx, { kind: "storymap", title: "River", navigation: true,
+			cover: { image: "https://x.example/cover.jpg", date: "none" }, blocks: [
+				{ type: "heading", text: "Why" }, { type: "text", text: "A **big** *river* — see [the plan](https://x.example/plan) <script>" },
+				{ type: "heading", text: "Detail", level: 3 }, { type: "bullets", items: ["one", "two"] }, { type: "quote", text: "Water is life" },
+				{ type: "image", url: "https://x.example/a.png", caption: "Banks", size: "wide", link: "https://x.example" },
+				{ type: "map", webmap_id: MAP, size: "full" }, { type: "embed", url: "https://x.example/app", display: "card" },
+				{ type: "video", url: "https://youtu.be/abc" }, { type: "button", text: "Read more", url: "https://x.example/more" },
+				{ type: "separator" }, { type: "number", value: "1,250", text: "homes protected" },
+				{ type: "swipe", left: { webmap_id: MAP }, right: { webmap_id: MAP }, caption: "Before / after" },
+				{ type: "sidecar", style: "floating", slides: [{ heading: "Upstream", text: "Rain.", webmap_id: MAP }, { text: "Pic", image: "https://x.example/p.png" }] },
+				{ type: "timeline", events: [{ heading: "2020", text: "Survey" }, { heading: "2024", image: "https://x.example/t.png" }] }] });
+		const story = json(sent(calls, `/items/${NEW}/update`)[0].params.text);
+		const n = story.nodes;
+		const root = n[story.root];
+		const top = root.children.map((id: string) => n[id]);
+		expect(top.map((x: any) => x.type)).toEqual(["storycover", "navigation", "text", "text", "text", "text", "text", "image", "webmap", "embed",
+			"embed", "button", "separator", "large-number", "swipe", "immersive", "timeline", "credits"]);
+		expect(root.config.coverDate).toBe("none");
+		const cover = top[0];
+		expect(cover.data.type).toBe("full");
+		expect(story.resources[n[cover.children[0]].data.image].data).toEqual({ src: "https://x.example/cover.jpg", provider: "uri", height: 300, width: 400 });
+		expect(top[1]).toEqual({ type: "navigation", data: { links: [root.children[2]] }, config: { isHidden: false } });
+		expect(top[3].data).toEqual({ type: "paragraph", text: 'A <strong>big</strong> <em>river</em> — see <a href="https://x.example/plan" '
+			+ 'rel="noopener noreferrer" target="_blank">the plan</a> &lt;script&gt;' });
+		expect(top[4].data.type).toBe("h3");
+		expect(top[5].data).toEqual({ type: "bullet-list", text: "<li>one</li><li>two</li>" });
+		expect(top[7]).toMatchObject({ data: { caption: "Banks", link: "https://x.example" }, config: { size: "wide" } });
+		expect(top[8].config).toEqual({ size: "full" });
+		expect(top[9].data).toMatchObject({ embedType: "link", display: "card", providerUrl: "x.example", embedSrc: "https://x.example/app" });
+		expect(top[10].data).toMatchObject({ embedType: "video", url: "https://youtu.be/abc", addedAsEmbedCode: true });
+		expect(top[11].data).toEqual({ text: "Read more", link: "https://x.example/more" });
+		expect(top[13].data).toEqual({ title: "1,250", description: "homes protected", alignment: "center" });
+		expect(Object.values<string>(top[14].data.contents).map((id) => n[id].type)).toEqual(["webmap", "webmap"]);
+		const sidecar = top[15];
+		expect(sidecar.data).toEqual({ type: "sidecar", subtype: "floating-panel", narrativePanelPosition: "start", narrativePanelSize: "medium" });
+		const [slide1, slide2] = sidecar.children.map((id: string) => n[id]);
+		expect(slide1).toMatchObject({ type: "immersive-slide", data: { transition: "fade" } });
+		expect(slide1.children.map((id: string) => n[id].type)).toEqual(["immersive-narrative-panel", "webmap"]);
+		expect(n[slide1.children[0]].children.map((id: string) => n[id].data.type)).toEqual(["h3", "paragraph"]);
+		expect(n[slide2.children[1]].type).toBe("image");
+		const events = top[16].children.map((id: string) => n[id]);
+		expect(top[16].data).toEqual({ type: "waterfall" });
+		expect(events[1].children.map((id: string) => n[id].type)).toEqual(["text", "image"]);
+		expect(out.blocks).toBe(15);
+	});
+
+	it("story blocks are checked before anything is created", async () => {
+		const { ctx, calls } = fakeCtx(common({ [`/content/items/${MAP}/data`]: () => ({ operationalLayers: [] }) }));
+		const make = (blocks: any[], extra: Record<string, unknown> = {}) => app(ctx, { kind: "storymap", blocks, ...extra } as any);
+		await expect(make([{ type: "image", url: "http://x.example/a.png" }])).rejects.toThrow(/image url must be an https link/);
+		await expect(make([{ type: "swipe", left: { webmap_id: MAP }, right: { image: "https://x.example/a.png" } }])).rejects.toThrow(/two web maps/);
+		await expect(make([{ type: "sidecar", slides: [{ text: "no media" }] }])).rejects.toThrow(/slides\[0\] needs webmap_id, image or url/);
+		await expect(make([{ type: "bullets", items: [] }])).rejects.toThrow(/needs items/);
+		await expect(make([{ type: "button", text: "Go", url: "javascript:alert(1)" }])).rejects.toThrow(/url must be an https/);
+		await expect(make([{ type: "separator" }], { cover: { type: "poster" } })).rejects.toThrow(/cover type/);
+		expect(sent(calls, "/addItem")).toHaveLength(0);
 	});
 });
 

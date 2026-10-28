@@ -89,6 +89,36 @@ export type SelectorSpec = {
 
 export type Section = { heading?: string; text?: string; webmap_id?: string };
 
+export const STORY_BLOCKS = ["heading", "text", "quote", "bullets", "numbered", "image", "map", "embed", "video", "button", "separator",
+	"number", "swipe", "sidecar", "timeline"] as const;
+/** What a slide, a swipe side or a cover shows: a web map, an image (https), or a page (url). */
+export type StoryMedia = { webmap_id?: string; image?: string; url?: string; caption?: string };
+export type StoryBlock = {
+	type: (typeof STORY_BLOCKS)[number];
+	/** heading / text / quote / button text; number: the line under the value. Text takes **bold**, *italic*, [link](https://...). */
+	text?: string;
+	level?: number;
+	items?: string[];
+	url?: string;
+	webmap_id?: string;
+	caption?: string;
+	alt?: string;
+	/** image: small | standard | wide | full | float; map: standard | wide | full | float. */
+	size?: string;
+	/** image: where clicking it goes. */
+	link?: string;
+	/** embed: card | inline. */
+	display?: string;
+	/** number: the big value ("1,250", "73%"). */
+	value?: string;
+	left?: StoryMedia;
+	right?: StoryMedia;
+	/** sidecar: docked | floating | slideshow; timeline: waterfall | timeline. */
+	style?: string;
+	slides?: (StoryMedia & { heading?: string; text?: string })[];
+	events?: { heading?: string; text?: string; image?: string }[];
+};
+
 export type AppArgs = {
 	action?: "templates" | "create";
 	kind?: AppKind;
@@ -103,6 +133,12 @@ export type AppArgs = {
 	options?: Record<string, unknown>;
 	widgets?: WidgetSpec[];
 	sections?: Section[];
+	/** storymap: the story's blocks in order (after sections). */
+	blocks?: StoryBlock[];
+	/** storymap: the cover: full | sidebyside | minimal, an image, and the date shown. */
+	cover?: { type?: string; image?: string; alt?: string; date?: string };
+	/** storymap: a navigation bar of the h2 headings. */
+	navigation?: boolean;
 	theme?: string;
 	publish?: boolean;
 	/** dashboard: classic, or executive (dark panels, icons, donuts, smooth area lines; navy theme by default). */

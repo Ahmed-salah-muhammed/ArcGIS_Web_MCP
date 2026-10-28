@@ -3,13 +3,15 @@ import { defineTool, WRITES } from "../shared/mcp";
 import { app } from "./handler";
 import { QUESTION_TYPES } from "../portal_survey123/draft";
 import { CONDITION_OPS, DATE_UNITS } from "./filters";
-import { APP_KINDS, COLUMNS, ICONS, PERIODS, SELECTOR_PLACES, SELECTOR_TYPES, STACKS, STATISTICS, STYLES, WIDGET_TYPES } from "./types";
+import { APP_KINDS, COLUMNS, ICONS, PERIODS, SELECTOR_PLACES, SELECTOR_TYPES, STACKS, STATISTICS, STORY_BLOCKS, STYLES, WIDGET_TYPES } from "./types";
 
 const scalar = z.union([z.string(), z.number()]);
 /** A filter condition: a value, a list, or {op, value, unit}. */
 const condition = z.union([scalar, z.array(scalar), z.object({ op: z.enum(CONDITION_OPS), value: z.union([scalar, z.array(scalar)]).optional(),
 	unit: z.enum(DATE_UNITS).optional() })]);
 const conditions = z.record(z.string(), condition);
+const storyMedia = z.object({ webmap_id: z.string().optional(), image: z.string().optional(), url: z.string().optional(),
+	caption: z.string().max(500).optional() });
 
 export const tool = defineTool({
 	name: "portal_app",
@@ -32,7 +34,12 @@ export const tool = defineTool({
 		+ "moving the map filters them); style classic|executive (dark panels with icons, donuts with outside labels, smooth area "
 		+ "lines; navy theme); theme light|dark|navy; subtitle; logo_url) | "
 		+ "experience (Experience Builder: template name, webmap_id bound to its maps; publish default true) | "
-		+ "storymap (sections = [{heading, text, webmap_id}] or webmap_id; theme summit|obsidian|ridgeline|mesa|tidal|slate; publish default true) | "
+		+ "storymap (blocks = [{type: heading (level 2-4)|text|quote|bullets|numbered (items)|image (url, size, link)|map (webmap_id, size)|"
+		+ "embed (url, display card|inline)|video (url)|button (text, url)|separator|number (value, text)|swipe (left/right: two webmap_id or "
+		+ "two image)|sidecar (style docked|floating|slideshow, slides [{heading, text, webmap_id|image|url}])|timeline (style waterfall|"
+		+ "timeline, events [{heading, text, image}]), caption, alt}] with **bold**, *italic*, [links](https://..) in text; or sections = "
+		+ "[{heading, text, webmap_id}] or webmap_id; cover {type full|sidebyside|minimal, image, date}; navigation (h2 links); theme "
+		+ "summit|obsidian|ridgeline|mesa|tidal|slate; publish default true) | "
 		+ "survey (Survey123 draft that opens in the web designer, where Publish creates its layer; questions = [{type: "
 		+ "text|textarea|number|integer|date|datetime|single|dropdown|multi|email|image|note|geopoint, label, choices, required}], "
 		+ "or target = a layer whose fields become the questions, or a default set) | "
@@ -110,6 +117,29 @@ export const tool = defineTool({
 		logo_url: z.string().optional().describe("dashboard: https link to a logo image"),
 		sections: z.array(z.object({ heading: z.string().optional(), text: z.string().optional(), webmap_id: z.string().optional() }))
 			.max(30).optional(),
+		blocks: z.array(z.object({
+			type: z.enum(STORY_BLOCKS),
+			text: z.string().max(5000).optional(),
+			level: z.number().int().min(2).max(4).optional(),
+			items: z.array(z.string().max(500)).max(30).optional(),
+			url: z.string().optional(),
+			webmap_id: z.string().optional(),
+			caption: z.string().max(500).optional(),
+			alt: z.string().max(300).optional(),
+			size: z.enum(["small", "standard", "wide", "full", "float"]).optional(),
+			link: z.string().optional(),
+			display: z.enum(["card", "inline"]).optional(),
+			value: z.string().max(40).optional(),
+			left: storyMedia.optional(),
+			right: storyMedia.optional(),
+			style: z.enum(["docked", "floating", "slideshow", "waterfall", "timeline"]).optional(),
+			slides: z.array(storyMedia.extend({ heading: z.string().max(200).optional(), text: z.string().max(3000).optional() })).max(20).optional(),
+			events: z.array(z.object({ heading: z.string().max(200).optional(), text: z.string().max(2000).optional(), image: z.string().optional() }))
+				.max(30).optional(),
+		})).max(80).optional().describe("storymap: the story's blocks in order"),
+		cover: z.object({ type: z.enum(["full", "sidebyside", "minimal"]).optional(), image: z.string().optional(), alt: z.string().optional(),
+			date: z.enum(["first-published", "last-published", "current-date", "none"]).optional() }).optional().describe("storymap: the cover"),
+		navigation: z.boolean().optional().describe("storymap: a navigation bar of the h2 headings"),
 		theme: z.string().optional(),
 		publish: z.boolean().optional(),
 		fields: z.array(z.string()).optional().describe("fieldmaps: the fields in the form, in order"),

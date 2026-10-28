@@ -188,14 +188,14 @@ export const TOOL_DOCS: ToolDoc[] = [
 		name: "portal_app", category: "apps",
 		summary: "Apps built from your maps and layers: Instant Apps, Dashboards, Experience Builder, StoryMaps, Survey123, Field Maps, and Experience Builder Developer Edition.",
 		actions: [
-			{ name: "templates", does: "A kind's templates: Instant Apps from your org's gallery, Experience Builder templates, StoryMaps themes, dashboard widgets" },
+			{ name: "templates", does: "A kind's templates: Instant Apps from your org's gallery (with their settings), Experience Builder templates, StoryMaps themes and blocks, dashboard widgets" },
 			{ name: "create", does: "Builds the app and returns its item and the link to open it" },
 		],
 		inputs: [
 			{ name: "kind=instant", does: "An Instant App of a web map from any template (Basic, Sidebar...)" },
 			{ name: "kind=dashboard", does: "An interactive dashboard of a layer: indicators (compared with last year or any reference), gauges, pie / bar / line charts (by date, split into stacked series, with target lines), list, table (cells coloured by condition), map, legend, details, embedded pages and images, in tabs if you like; category / date / number selectors in the header or a sidebar; filters on text, numbers and dates; selecting in one widget filters the others and the map; automatic when no widgets are given" },
 			{ name: "kind=experience", does: "An Experience Builder app from one of 50 templates, with your web map in its maps" },
-			{ name: "kind=storymap", does: "A story with a cover, headings, text and maps, in one of six themes" },
+			{ name: "kind=storymap", does: "A story of blocks: headings, rich text, quotes, lists, images, maps, embeds, video, buttons, big numbers, swipe comparisons, sidecar slides and timelines, with a cover image and a navigation bar, in one of six themes" },
 			{ name: "kind=survey", does: "A Survey123 draft that opens in the web designer (portal_survey123 also makes XLSForms for Connect)" },
 			{ name: "kind=fieldmaps", does: "A web map ready for Field Maps: forms from the layers' fields, optional offline" },
 			{ name: "kind=exb_developer", does: "Registers Experience Builder Developer Edition and returns its client ID and setup steps" },

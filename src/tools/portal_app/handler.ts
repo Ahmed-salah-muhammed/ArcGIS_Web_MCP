@@ -7,7 +7,7 @@ import { registerExbDeveloper } from "./developer";
 import { createExperience, experienceTemplates } from "./experience";
 import { prepareFieldMaps } from "./fieldmaps";
 import { createInstant, instantTemplates } from "./instant";
-import { createStorymap, STORY_THEMES } from "./storymap";
+import { BLOCK_HELP, createStorymap, STORY_THEMES } from "./storymap";
 import { createSurvey } from "../portal_survey123/draft";
 import { APP_KINDS, type AppArgs } from "./types";
 
@@ -20,7 +20,7 @@ export async function app(ctx: Ctx, args: AppArgs) {
 	if ((args.action ?? "create") === "templates") {
 		if (kind === "instant") return { kind, templates: (await instantTemplates(ctx)).map(({ typeKeywords: _, ...t }) => t) };
 		if (kind === "experience") return { kind, templates: experienceTemplates() };
-		if (kind === "storymap") return { kind, themes: STORY_THEMES };
+		if (kind === "storymap") return { kind, themes: STORY_THEMES, blocks: BLOCK_HELP };
 		if (kind === "dashboard") return { kind, widgets: WIDGET_HELP };
 		throw new ArcGISError(`${kind} has no templates.`, "bad_argument");
 	}
