@@ -7,6 +7,8 @@ export const WIDGET_TYPES = ["map", "indicator", "pie", "bar", "line", "list", "
 export const STATISTICS = ["count", "sum", "avg", "min", "max"] as const;
 export const COLUMNS = ["left", "center", "right"] as const;
 export const PERIODS = ["day", "month", "year"] as const;
+export const STYLES = ["classic", "executive"] as const;
+export const ICONS = ["person", "people", "billboard", "screen", "check", "pin", "chart", "alert", "building"] as const;
 
 export type WidgetSpec = {
 	type: (typeof WIDGET_TYPES)[number];
@@ -30,6 +32,16 @@ export type WidgetSpec = {
 	period?: (typeof PERIODS)[number];
 	/** embed: the page shown (https). */
 	url?: string;
+	/** indicator: a ready icon (person, people, billboard...) or an <svg> of your own, drawn in the value's colour. */
+	icon?: string;
+	/** bar/line: categories down the side instead of along the bottom. */
+	rotated?: boolean;
+	/** list: one row per value of this field, with the totals in values (an Arcade data expression). */
+	group_by?: string;
+	/** list with group_by: the numbers on each row; no field = how many rows. */
+	values?: { label: string; field?: string; statistic?: (typeof STATISTICS)[number]; color?: string }[];
+	/** map: another web map (e.g. a heatmap of the same data), moving together with the dashboard's main map. */
+	webmap_id?: string;
 };
 
 export type Section = { heading?: string; text?: string; webmap_id?: string };
@@ -50,6 +62,8 @@ export type AppArgs = {
 	sections?: Section[];
 	theme?: string;
 	publish?: boolean;
+	/** dashboard: classic, or executive (dark panels, icons, donuts, smooth area lines; navy theme by default). */
+	style?: (typeof STYLES)[number];
 	/** dashboard: selections filter the other widgets and the map; default true. */
 	interactive?: boolean;
 	/** dashboard: moving the map filters the widgets to what it shows; default true. */

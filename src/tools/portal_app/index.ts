@@ -2,7 +2,7 @@ import { z } from "zod";
 import { defineTool, WRITES } from "../shared/mcp";
 import { app } from "./handler";
 import { QUESTION_TYPES } from "../portal_survey123/draft";
-import { APP_KINDS, COLUMNS, PERIODS, STATISTICS, WIDGET_TYPES } from "./types";
+import { APP_KINDS, COLUMNS, ICONS, PERIODS, STATISTICS, STYLES, WIDGET_TYPES } from "./types";
 
 export const tool = defineTool({
 	name: "portal_app",
@@ -11,10 +11,13 @@ export const tool = defineTool({
 		+ "instant (webmap_id + template, default basic; options = app settings) | "
 		+ "dashboard (target = feature layer item id and/or webmap_id; widgets = [{type: map|indicator|pie|bar|line|list|table|details|legend|text|embed, "
 		+ "field, value_field, statistic, fields, title, text, url, filter {FIELD: value|[values]} on text fields, column left|center|right, "
-		+ "tab (same column + tab = one tabbed panel), color #rrggbb, period day|month|year for bar/line on a date field}], or omitted "
-		+ "for an automatic one; interactive (default true: selecting in a chart/list/table filters the other widgets and the map and "
-		+ "zooms to it, selecting on the map filters them), extent_filter (default true: moving the map filters them); theme light|dark; "
-		+ "subtitle; logo_url) | "
+		+ "tab (same column + tab = one tabbed panel), color #rrggbb, period day|month|year for bar/line on a date field, rotated (bar/line "
+		+ "down the side), icon (indicator: person|people|billboard|screen|check|pin|chart|alert|building or an <svg>), group_by + values "
+		+ "(list: one row per value of a field with totals [{label, field, statistic, color}]), webmap_id (map: a second map, e.g. a "
+		+ "heatmap, moving with the main one)}], or omitted for an automatic one; interactive (default true: selecting in a chart/list/"
+		+ "table filters the other widgets and the map and zooms to it, selecting on the map filters them), extent_filter (default true: "
+		+ "moving the map filters them); style classic|executive (dark panels with icons, donuts with outside labels, smooth area "
+		+ "lines; navy theme); theme light|dark|navy; subtitle; logo_url) | "
 		+ "experience (Experience Builder: template name, webmap_id bound to its maps; publish default true) | "
 		+ "storymap (sections = [{heading, text, webmap_id}] or webmap_id; theme summit|obsidian|ridgeline|mesa|tidal|slate; publish default true) | "
 		+ "survey (Survey123 draft that opens in the web designer, where Publish creates its layer; questions = [{type: "
@@ -50,7 +53,14 @@ export const tool = defineTool({
 			tab: z.string().max(40).optional().describe("Tab name; widgets of a column with tabs share one tabbed panel"),
 			color: z.string().optional().describe("#rrggbb"),
 			period: z.enum(PERIODS).optional().describe("bar/line on a date field: bin by day, month or year"),
+			rotated: z.boolean().optional().describe("bar/line: categories down the side"),
+			icon: z.string().max(8000).optional().describe(`indicator: ${ICONS.join(" | ")}, or an <svg>`),
+			group_by: z.string().optional().describe("list: one row per value of this field"),
+			values: z.array(z.object({ label: z.string().max(40), field: z.string().optional(), statistic: z.enum(STATISTICS).optional(),
+				color: z.string().optional() })).max(4).optional().describe("list with group_by: the numbers on each row; no field = count"),
+			webmap_id: z.string().optional().describe("map: another web map that moves with the main one"),
 		})).max(20).optional(),
+		style: z.enum(STYLES).optional().describe("dashboard: classic (default) or executive"),
 		interactive: z.boolean().optional().describe("dashboard: widgets filter each other and the map; default true"),
 		extent_filter: z.boolean().optional().describe("dashboard: moving the map filters the widgets; default true"),
 		subtitle: z.string().max(200).optional().describe("dashboard: header subtitle"),

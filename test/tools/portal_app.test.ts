@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoWidgets, layoutFor, widgetFilter } from "../../src/tools/portal_app/dashboard";
+import { autoWidgets, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
 import { formFor, inputFor } from "../../src/tools/portal_app/fieldmaps";
 import { app } from "../../src/tools/portal_app/handler";
 import { templateName } from "../../src/tools/portal_app/instant";
@@ -225,6 +225,113 @@ describe("portal_app: interactive dashboards", () => {
 		await expect(app(ctx, { kind: "dashboard", target: ID, logo_url: "javascript:1" })).rejects.toThrow(/logo_url/);
 		expect(sent(calls, "/addItem")).toHaveLength(0);
 		expect(autoWidgets(layer, false).map((w) => `${w.type}:${w.field ?? ""}`)).toContain("line:JoinDate");
+	});
+});
+
+describe("portal_app: executive dashboards", () => {
+	const HEAT = "9".repeat(32);
+	const layer = { name: "users", objectIdField: "OBJECTID", fields: [{ name: "OBJECTID", type: "esriFieldTypeOID" },
+		{ name: "Gov", type: "esriFieldTypeString" }, { name: "Role", type: "esriFieldTypeString" },
+		{ name: "Units", type: "esriFieldTypeInteger" }, { name: "JoinDate", type: "esriFieldTypeDate" }] };
+	const routes = () => ({ ...common({
+		[`/content/items/${ID}`]: () => ({ id: ID, type: "Feature Service", url: SVC }),
+		[`/content/items/${HEAT}`]: () => ({ id: HEAT, type: "Web Map", title: "Heat" }),
+		[`/content/items/${ID2}`]: () => ({ id: ID2, type: "CSV", title: "Not a map" }),
+		[SVC]: () => ({ layers: [{ id: 0, name: "users" }] }),
+		[`${SVC}/0`]: () => layer,
+		[`${SVC}/0/query`]: (p) => ({ features: [{ attributes: { [String(p.groupByFieldsForStatistics)]: "Cairo", n: 9 } },
+			{ attributes: { [String(p.groupByFieldsForStatistics)]: "Giza", n: 4 } }] }),
+	}), [`/content/items/${MAP}/data`]: () => ({ operationalLayers: [{ id: "op-users", title: "Users", url: `${SVC}/0` }] }) });
+	const widgets = [
+		{ type: "indicator", title: "Owners", filter: { Role: "owner" }, icon: "person", tab: "Owners" },
+		{ type: "indicator", title: "Users", filter: { Role: "user" }, icon: "people", color: "#00bfff", tab: "Users" },
+		{ type: "list", group_by: "Gov", title: "By governorate", filter: { Role: ["owner", "user"] }, values: [
+			{ label: "Owners" }, { label: "Units", field: "Units", statistic: "sum", color: "#00bfff" }] },
+		{ type: "pie", field: "Gov", title: "Pie", column: "left" },
+		{ type: "map", title: "Main Map", tab: "Main Map" },
+		{ type: "map", title: "Heatmap", webmap_id: HEAT, tab: "Heatmap" },
+		{ type: "line", field: "JoinDate", period: "day", rotated: true, title: "Trend" }];
+	const build = async (extra: Record<string, unknown> = {}) => {
+		silence();
+		const { ctx, calls } = fakeCtx(routes());
+		const out: any = await app(ctx, { kind: "dashboard", target: ID, webmap_id: MAP, style: "executive", widgets, ...extra } as any);
+		const data = json(sent(calls, "/addItem")[0].params.text);
+		const byName = (name: string) => data.desktopView.widgets.find((w: any) => w.name === name);
+		return { out, data, byName, calls };
+	};
+
+	it("the navy theme is saved as the dashboard's resource; widgets get the executive look", async () => {
+		const { out, data, byName, calls } = await build();
+		expect(data.theme).toEqual({ id: "user", type: "resource" });
+		const resource = sent(calls, "/addResources")[0].params;
+		expect(resource).toMatchObject({ resourcesPrefix: "themes", fileName: "user.json" });
+		expect(json(resource.text)).toEqual(NAVY_THEME);
+		expect(out).toMatchObject({ theme: "navy", style: "executive" });
+		const owners = byName("Owners");
+		expect(owners.defaultSettings).toMatchObject({ backgroundColor: "#1e232d", topSection: { textInfo: { text: "Owners", weight: "bold" } },
+			middleSection: { textInfo: { fillColor: "#facc15" }, iconInfo: { align: "left" } } });
+		expect(owners.defaultSettings.middleSection.iconInfo.icon).toContain('fill="#facc15"');
+		expect(byName("Users").defaultSettings.middleSection.iconInfo.icon).toContain('fill="#00bfff"');
+		const pie = byName("Pie").chartConfig;
+		expect(pie.series[0]).toMatchObject({ innerRadius: 61, startAngle: 270, dataLabels: { visible: true },
+			sliceGrouping: { percentageThreshold: 10 } });
+		expect(pie.legend.visible).toBe(false);
+		const trend = byName("Trend");
+		expect(trend.chartConfig.rotated).toBe(true);
+		expect(trend.chartConfig.series[0]).toMatchObject({ lineSmoothed: true, showArea: true, areaColor: [0, 191, 255, 127.5],
+			temporalBinning: { unit: "days" } });
+	});
+
+	it("a grouped list is an Arcade data expression that filters, and is filtered by, its field", async () => {
+		const { data, byName } = await build();
+		const [expr] = data.arcadeDataSourceItems;
+		expect(expr.script).toContain(`FeatureSetByPortalItem(Portal("https://acme.maps.arcgis.com"), "${ID}", 0, ["Gov","Units","Role"], false);`);
+		expect(expr.script).toContain(`fs = Filter(fs, "Role IN ('owner', 'user')");`);
+		expect(expr.script).toContain(`GroupBy(fs, ["Gov"], [{ name: 'value_1', expression: "1", statistic: 'COUNT' }, `
+			+ `{ name: 'value_2', expression: "Units", statistic: 'SUM' }]);`);
+		expect(expr.script).toContain("return OrderBy(rows, 'value_1 DESC');");
+		const list = byName("By governorate");
+		expect(list.datasets[0]).toMatchObject({ dataSource: { type: "arcadeDataSource", itemId: expr.itemId }, outFields: ["Gov", "value_1", "value_2"] });
+		expect(list.text).toContain("{field/Gov}");
+		expect(list.text).toContain('<span style="color:#00bfff;font-size:14px;"><strong>{field/value_2}</strong>');
+		const main = byName("Main Map");
+		const pie = byName("Pie");
+		const fieldMap = [{ sourceName: "Gov", targetName: "Gov" }];
+		expect(list.events[0].actions[0].targets).toContainEqual({ targetId: `${pie.id}#main`, by: "whereClause", requiresSelection: false, fieldMap });
+		expect(list.events[0].actions[0].targets).toContainEqual({ targetId: `${main.id}#op-users`, by: "whereClause", requiresSelection: false, fieldMap });
+		expect(list.events[0].actions).toHaveLength(1); // no zoom: the rows have no geometry
+		expect(pie.events[0].actions[0].targets).toContainEqual({ targetId: `${list.id}#main`, by: "whereClause", requiresSelection: false, fieldMap });
+		expect(byName("Trend").events[0].actions[0].targets.map((t: any) => t.targetId)).not.toContain(`${list.id}#main`);
+		expect(main.events[0].actions[0].targets.map((t: any) => t.targetId)).not.toContain(`${list.id}#main`);
+		expect(main.layers[0].events[0].actions[0].targets).toContainEqual({ targetId: `${list.id}#main`, by: "whereClause", requiresSelection: false, fieldMap });
+	});
+
+	it("a second map moves with the main one; tabs hold both", async () => {
+		const { data, byName } = await build();
+		const main = byName("Main Map");
+		expect(byName("Heatmap")).toMatchObject({ itemId: HEAT, linkedMapWidgetIds: [main.id], mapTools: [] });
+		expect(main).toMatchObject({ itemId: MAP, linkedMapWidgetIds: [], showNavigation: false });
+		const center = data.desktopView.layout.rootElement.elements[1];
+		expect(center.elements[0].elements.map((e: any) => e.tabName)).toEqual(["Main Map", "Heatmap"]);
+	});
+
+	it("refuses unsafe icons, a second map that is not a web map, and more than 4 list values", async () => {
+		expect(() => iconSvg('<svg onload="x()"></svg>', "#fff")).toThrow(/plain <svg>/);
+		expect(() => iconSvg("<svg><script>x</script></svg>", "#fff")).toThrow(/plain <svg>/);
+		expect(() => iconSvg("rocket", "#fff")).toThrow(/person, people/);
+		expect(iconSvg('<svg viewBox="0 0 1 1"><path d="M0 0h1v1z"/></svg>', "#fff")).toContain("<path");
+		const { ctx, calls } = fakeCtx(routes());
+		await expect(app(ctx, { kind: "dashboard", target: ID, webmap_id: MAP, widgets: [{ type: "map" }, { type: "map", webmap_id: ID2 }] }))
+			.rejects.toThrow(/must be a Web Map/);
+		await expect(app(ctx, { kind: "dashboard", target: ID, widgets: [{ type: "list", group_by: "Gov",
+			values: [{ label: "a" }, { label: "b" }, { label: "c" }, { label: "d" }, { label: "e" }] }] })).rejects.toThrow(/up to 4/);
+		expect(sent(calls, "/addItem")).toHaveLength(0);
+	});
+
+	it("classic dashboards keep the defined theme and add no resource", async () => {
+		const { data, calls } = await build({ style: undefined, theme: "dark" });
+		expect(data.theme).toEqual({ id: "dark", type: "defined" });
+		expect(sent(calls, "/addResources")).toHaveLength(0);
 	});
 });
 

@@ -202,6 +202,7 @@ export const TOOL_DOCS: ToolDoc[] = [
 		],
 		examples: ["Make a dashboard of the inspections layer with a count, a pie by status and a table.",
 			"An interactive dashboard of the users layer: owners and users counts in tabs, a pie by governorate, sign-ups per day.",
+			"An executive-style dashboard: counts with icons, a list per city with totals, a heatmap tab next to the map.",
 			"Create a Sidebar Instant App of my parks map.", "Build a story about the river project with the flood map in the middle."],
 		notes: ["Apps are created private in your content; share them with portal_share."],
 	},
