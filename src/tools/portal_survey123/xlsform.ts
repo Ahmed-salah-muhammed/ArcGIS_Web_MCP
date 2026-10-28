@@ -10,7 +10,11 @@ type Row = (string | undefined)[];
 
 const XLSFORM_TYPE: Record<string, string> = { text: "text", textarea: "text", number: "decimal", integer: "integer", date: "date",
 	datetime: "dateTime", single: "select_one", dropdown: "select_one", multi: "select_multiple", email: "text", image: "image",
-	note: "note", geopoint: "geopoint" };
+	note: "note", geopoint: "geopoint", time: "time", barcode: "barcode", signature: "image", file: "file", audio: "audio",
+	geotrace: "geotrace", geoshape: "geoshape", rank: "rank", calculate: "calculate", hidden: "hidden" };
+const LISTED = new Set(["select_one", "select_multiple", "rank"]);
+const GEO = new Set(["geopoint", "geotrace", "geoshape"]);
+const DEFAULT_APPEARANCE: Record<string, string> = { textarea: "multiline", dropdown: "minimal", signature: "signature" };
 
 /** A choice's name: its value when that is already a valid name, otherwise a slug (select_multiple needs no spaces). */
 function choiceName(value: string, used: Set<string>): string {
@@ -25,45 +29,99 @@ function choiceName(value: string, used: Set<string>): string {
 /** A question as the XLSForm names it; the published layer's fields use the same names. */
 export type NamedQuestion = { spec: QuestionSpec; name: string; label: string; choices: { name: string; label: string }[] };
 
+const SURVEY_HEADER = ["type", "name", "label", "hint", "required", "required_message", "appearance", "relevant", "constraint",
+	"constraint_message", "calculation", "default", "readonly", "choice_filter"];
+
+/** ${name} references in an expression must be questions of the form. */
+function checkRefs(expr: string | undefined, names: Set<string>, what: string) {
+	for (const m of String(expr ?? "").matchAll(/\$\{([^}]*)\}/g)) {
+		if (!names.has(m[1])) throw new ArcGISError(`${what}: \${${m[1]}} is not a question name. Names: ${[...names].join(", ")}`, "bad_argument");
+	}
+}
+
 /**
- * The XLSForm rows: survey (type, name, label, required, appearance, constraint, constraint_message), choices,
- * settings, plus the questions with the names given to them and the form id (the layer's name when published).
+ * The XLSForm rows: survey (type, name, label, hint, required, appearance, relevant, constraint, calculation, default,
+ * readonly, choice_filter...; consecutive questions of one group inside begin group / end group), choices (with a filter
+ * column when choices have one), settings (style pages with pages=true), plus the questions with the names given to
+ * them and the form id (the layer's name when published).
  */
-export function xlsformRows(title: string, specs: QuestionSpec[]) {
-	if (specs.filter((s) => s.type === "geopoint").length > 1) throw new ArcGISError("A survey has one location question.", "bad_argument");
-	const survey: Row[] = [["type", "name", "label", "required", "appearance", "constraint", "constraint_message"]];
-	const choices: Row[] = [["list_name", "name", "label"]];
+export function xlsformRows(title: string, specs: QuestionSpec[], opts: { pages?: boolean } = {}) {
+	if (specs.filter((s) => GEO.has(s.type)).length > 1) {
+		throw new ArcGISError("A survey has one location question (geopoint, geotrace or geoshape): it is the layer's geometry.", "bad_argument");
+	}
+	const survey: Row[] = [SURVEY_HEADER];
+	const filtered = specs.some((s) => s.choices?.some((c) => typeof c === "object" && c.filter !== undefined));
+	const choices: Row[] = [filtered ? ["list_name", "name", "label", "filter"] : ["list_name", "name", "label"]];
 	const questions: NamedQuestion[] = [];
 	const used = new Set<string>(["location"]);
-	for (const s of specs) {
+	// names first, so expressions can point at any question
+	const names = specs.map((s, i) => {
+		if (s.name !== undefined) {
+			if (!/^[A-Za-z_][A-Za-z0-9_]{0,30}$/.test(s.name)) throw new ArcGISError(`questions[${i}] name '${s.name}' must be letters, digits, _ (31 at most).`, "bad_argument");
+			if (used.has(s.name)) throw new ArcGISError(`Two questions are named '${s.name}'.`, "bad_argument");
+			used.add(s.name);
+			return s.name;
+		}
+		return null;
+	}).map((n, i) => {
+		const s = specs[i];
+		if (n) return n;
+		if (s.type === "geopoint") return "location";
+		const label = String(s.label ?? "").trim();
+		if (!label) throw new ArcGISError(`questions[${i}] needs a label${["calculate", "hidden"].includes(s.type) ? " or a name" : ""}.`, "bad_argument");
+		return questionName(label, used);
+	});
+	const all = new Set(names);
+	let group: string | null = null;
+	const close = () => { if (group !== null) survey.push(["end group"]); group = null; };
+	for (const [i, s] of specs.entries()) {
 		const type = XLSFORM_TYPE[s.type];
 		if (!type) throw new ArcGISError(`Unknown question type '${s.type}'.`, "bad_argument");
-		const label = String(s.label ?? "").trim();
-		if (!label) throw new ArcGISError("Every question needs a label.", "bad_argument");
-		const name = s.type === "geopoint" ? "location" : questionName(label, used);
+		const name = names[i];
+		const label = String(s.label ?? "").trim() || name;
+		const what = `'${label}'`;
+		if (s.type === "calculate" && !s.calculation) throw new ArcGISError(`${what} (calculate) needs calculation.`, "bad_argument");
+		for (const k of ["relevant", "constraint", "calculation", "default", "choice_filter"] as const) checkRefs(s[k], all, `${what} ${k}`);
+		if (s.constraint_message && !s.constraint) throw new ArcGISError(`${what}: constraint_message needs constraint.`, "bad_argument");
+		if (s.choice_filter && !LISTED.has(type)) throw new ArcGISError(`${what}: choice_filter is for questions with choices.`, "bad_argument");
+		const wanted = s.group?.trim() || null;
+		if (wanted !== group) {
+			close();
+			if (wanted) {
+				const gName = questionName(`${wanted}_group`, used);
+				survey.push(["begin group", gName, wanted, undefined, undefined, undefined, opts.pages ? "field-list" : undefined]);
+				group = wanted;
+			}
+		}
 		let fullType = type;
 		const named: { name: string; label: string }[] = [];
-		if (type.startsWith("select_")) {
+		if (LISTED.has(type)) {
 			const list = `${name}_list`;
 			fullType = `${type} ${list}`;
-			if (!s.choices?.length) throw new ArcGISError(`'${label}' (${s.type}) needs choices.`, "bad_argument");
-			const names = new Set<string>();
+			if (!s.choices?.length) throw new ArcGISError(`${what} (${s.type}) needs choices.`, "bad_argument");
+			const taken = new Set<string>();
 			for (const c of s.choices) {
-				const { value, label: text } = typeof c === "string" ? { value: c, label: c } : c;
-				const choice = { name: choiceName(String(value), names), label: String(text ?? value) };
+				const { value, label: text, filter } = typeof c === "string" ? { value: c, label: c, filter: undefined } : c;
+				const choice = { name: choiceName(String(value), taken), label: String(text ?? value) };
 				named.push(choice);
-				choices.push([list, choice.name, choice.label]);
+				choices.push(filtered ? [list, choice.name, choice.label, filter] : [list, choice.name, choice.label]);
 			}
 		}
 		questions.push({ spec: s, name, label, choices: named });
-		const appearance = s.type === "textarea" ? "multiline" : s.type === "dropdown" ? "minimal" : undefined;
 		const email = s.type === "email";
-		survey.push([fullType, name, label, s.required ? "yes" : undefined, appearance,
-			email ? "regex(., '^[^@ ]+@[^@ ]+\\.[^@ ]+$')" : undefined, email ? "Enter a valid email address" : undefined]);
+		const appearance = s.appearance ?? DEFAULT_APPEARANCE[s.type];
+		const noLabel = s.type === "calculate" || s.type === "hidden";
+		survey.push([fullType, name, noLabel && !s.label ? undefined : label, s.hint, s.required ? "yes" : undefined, s.required_message,
+			appearance, s.relevant, s.constraint ?? (email ? "regex(., '^[^@ ]+@[^@ ]+\\.[^@ ]+$')" : undefined),
+			s.constraint_message ?? (email && !s.constraint ? "Enter a valid email address" : undefined), s.calculation, s.default,
+			s.read_only ? "yes" : undefined, s.choice_filter]);
 	}
+	close();
 	let formId = questionName(title, new Set()) || "survey";
 	if (formId.startsWith("_")) formId = `survey${formId}`.slice(0, 31);
-	const settings: Row[] = [["form_title", "form_id", "version"], [title, formId, new Date().toISOString().slice(0, 10).replace(/-/g, "")]];
+	const version = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+	const settings: Row[] = opts.pages ? [["form_title", "form_id", "version", "style"], [title, formId, version, "pages"]]
+		: [["form_title", "form_id", "version"], [title, formId, version]];
 	return { survey, choices, settings, questions, formId };
 }
 
@@ -149,7 +207,7 @@ export function xlsx(sheets: { name: string; rows: Row[] }[]): Uint8Array {
 	return zip(files.map((f) => ({ name: f.name, data: enc.encode(f.text) })));
 }
 
-export function xlsformFile(title: string, specs: QuestionSpec[]): Uint8Array {
-	const { survey, choices, settings } = xlsformRows(title, specs);
+export function xlsformFile(title: string, specs: QuestionSpec[], opts: { pages?: boolean } = {}): Uint8Array {
+	const { survey, choices, settings } = xlsformRows(title, specs, opts);
 	return xlsx([{ name: "survey", rows: survey }, { name: "choices", rows: choices }, { name: "settings", rows: settings }]);
 }

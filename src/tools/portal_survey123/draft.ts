@@ -16,9 +16,25 @@ import { base, requireId, resolveLayerUrl, userPath } from "../shared/lookup";
 import type { AppArgs } from "../portal_app/types";
 
 export const QUESTION_TYPES = ["text", "textarea", "number", "integer", "date", "datetime", "single", "dropdown", "multi", "email",
-	"image", "note", "geopoint"] as const;
-export type QuestionSpec = { type: (typeof QUESTION_TYPES)[number]; label: string; choices?: (string | { value: string; label: string })[];
-	required?: boolean };
+	"image", "note", "geopoint", "time", "barcode", "signature", "file", "audio", "geotrace", "geoshape", "rank", "calculate", "hidden"] as const;
+/** The types only an XLSForm makes (action=publish / xlsform), not the web designer's draft. */
+export const XLSFORM_ONLY = new Set(["time", "barcode", "signature", "file", "audio", "geotrace", "geoshape", "rank", "calculate", "hidden"]);
+/** The XLSForm columns only publish / xlsform write. */
+export const XLSFORM_COLUMNS = ["name", "group", "relevant", "constraint", "constraint_message", "calculation", "default", "appearance",
+	"read_only", "required_message", "choice_filter"] as const;
+export type QuestionSpec = { type: (typeof QUESTION_TYPES)[number]; label: string;
+	choices?: (string | { value: string; label: string; filter?: string })[]; required?: boolean;
+	/** Help under the question. */
+	hint?: string;
+	/** The question's name for ${name} in expressions (default: from the label). */
+	name?: string;
+	/** Questions with the same group, one after another, are one group (one page with pages=true). */
+	group?: string;
+	/** XLSForm expressions: shown when relevant, valid when constraint holds, the value of calculation. */
+	relevant?: string; constraint?: string; constraint_message?: string; calculation?: string;
+	default?: string; appearance?: string; read_only?: boolean; required_message?: string;
+	/** Which choices show, by the choices' filter: "filter=${region}". */
+	choice_filter?: string };
 
 const SKIP = /^(objectid|fid|globalid|shape__?(area|length)|shape|created_(user|date)|last_edited_(user|date)|creationdate|creator|editdate|editor)$/i;
 const TYPE: Record<string, string> = { text: "Text", textarea: "TextArea", number: "Number", integer: "Number", date: "Date",
@@ -42,13 +58,21 @@ export function questionName(label: string, used: Set<string>): string {
 }
 
 export function question(spec: QuestionSpec, n: number, used: Set<string>, extent: any) {
+	if (XLSFORM_ONLY.has(spec.type)) {
+		throw new ArcGISError(`'${spec.type}' questions are made with an XLSForm: use portal_survey123 action=publish (or xlsform).`, "bad_argument");
+	}
+	const extra = XLSFORM_COLUMNS.filter((k) => spec[k] !== undefined && spec[k] !== false);
+	if (extra.length) {
+		throw new ArcGISError(`${extra.join(", ")} are XLSForm settings: use portal_survey123 action=publish (or xlsform) for '${spec.label}'.`,
+			"bad_argument");
+	}
 	const t = TYPE[spec.type];
 	if (!t) throw new ArcGISError(`Unknown question type '${spec.type}'. Types: ${QUESTION_TYPES.join(", ")}`, "bad_argument");
 	const label = String(spec.label ?? "").trim();
 	if (!label) throw new ArcGISError("Every question needs a label.", "bad_argument");
 	const name = spec.type === "geopoint" ? "location" : questionName(label, used);
 	const q: Record<string, unknown> = { isNameModified: false, id: `field_${n}`, name, type: `esriQuestionType${t}`,
-		isRequired: Boolean(spec.required), label, description: null };
+		isRequired: Boolean(spec.required), label, description: spec.hint ? esc(spec.hint) : null };
 	if (spec.type !== "note" && spec.type !== "geopoint") q.fieldName = name;
 	const choices = () => {
 		const items = (spec.choices ?? []).map((c) => (typeof c === "string" ? { value: c, label: c } : c))

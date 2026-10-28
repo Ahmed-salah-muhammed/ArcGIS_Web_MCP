@@ -161,5 +161,7 @@ export type AppArgs = {
 	sidebar_title?: string;
 	fields?: string[];
 	redirect_uris?: string[];
-	questions?: { type: string; label: string; choices?: (string | { value: string; label: string })[]; required?: boolean }[];
+	questions?: { type: string; label: string; choices?: (string | { value: string; label: string; filter?: string })[]; required?: boolean;
+		hint?: string; name?: string; group?: string; relevant?: string; constraint?: string; constraint_message?: string; calculation?: string;
+		default?: string; appearance?: string; read_only?: boolean; required_message?: string; choice_filter?: string }[];
 };
