@@ -28,4 +28,5 @@ export function audit(props: ArcGISProps, record: { tool: string; action: string
 
 export const MAX_EDITS = 5000; // feature edits per portal_layer_edit call
 export const MAX_UPLOAD_CHARS = 5_000_000; // CSV / GeoJSON text accepted by portal_publish
+export const MAX_DOWNLOAD_BYTES = MAX_UPLOAD_CHARS * 4; // a url download: UTF-8 takes at most 4 bytes a character
 export const GEOCODE_CREDITS_EACH = 0.04; // ArcGIS Online: 40 credits per 1,000 geocoded rows

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { VERSION } from "../../src/pages/identity";
 import { findLayer, popupFor, unionExtent, webmap } from "../../src/tools/portal_map/handler";
 import { fakeCtx, ID, ID2, silence, SVC, USER } from "../helpers";
 
@@ -33,6 +34,7 @@ describe("portal_map", () => {
 		const out: any = await webmap(ctx, { action: "create", title: "M", layers: [ID] });
 		expect(calls.find((c) => c.url.endsWith("/addItem"))!.params).toMatchObject({ type: "Web Map", extent: "0,0,1,1" });
 		expect(out).toMatchObject({ basemap: "Topographic", layers: [{ title: "Pts", url: `${SVC}/0`, popup: true }] });
+		expect(saved).toMatchObject({ authoringApp: "ArcGIS Web MCP", authoringAppVersion: VERSION });
 	});
 
 	it("refuses layer URLs outside the portal and non-web-map items", async () => {
