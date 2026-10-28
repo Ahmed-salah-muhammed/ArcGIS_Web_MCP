@@ -205,7 +205,8 @@ export const TOOL_DOCS: ToolDoc[] = [
 			"An executive-style dashboard: counts with icons, a list per city with totals, a heatmap tab next to the map.",
 			"A dashboard with a sidebar of filters (status, last 7 / 30 days, minimum cost), this year's count vs last year, and a gauge of work done.",
 			"Create a Sidebar Instant App of my parks map.", "Build a story about the river project with the flood map in the middle."],
-		notes: ["Apps are created private in your content; share them with portal_share."],
+		notes: ["Apps are created private in your content; share them with portal_share.",
+			"Every app is written in shapes read from real items or the ArcGIS API for Python; what could not be verified is left to the app's builder: a dashboard reads one layer, story images are linked by URL, surveys have no repeats, Experience Builder widgets other than maps get their layers in the builder."],
 	},
 	{
 		name: "portal_survey123", category: "apps",

@@ -84,6 +84,20 @@ Add this to the client's MCP config ([Node.js](https://nodejs.org) required), th
 
 Deleting, bulk edits, public sharing and anything that spends credits ask for your confirmation first.
 
+## Apps: what `portal_app` builds and what is left
+
+Every app is written in the JSON shapes read from real items on ArcGIS Online (2026-10) or from the ArcGIS API for
+Python 2.4.3, never guessed. Shapes that could not be verified were left out on purpose; they are listed below.
+
+| App | Built for you | Still done in the app's own builder |
+| --- | --- | --- |
+| Dashboards | Indicators (with icons, compared with a reference such as last year), gauges, pie / bar / line charts (by date, split into stacked series, labels, target lines and bands), lists (also one row per value with totals), tables (cells coloured by condition, sorting), details, legend, text, embedded pages and images, a main map plus linked maps; tabs and three columns; category / date / number selectors in the header or a sidebar; filters on text, numbers and dates; widgets, selectors and the map filter each other; classic or executive (navy) look; header logo, link and menu | Data from more than one layer; scatter, histogram and other new chart types; "less than", "between" and date-range selectors; slider selectors; a fixed-value indicator target; a gauge maximum that follows the data (it is read once); custom grid sizes and the mobile view; custom theme colours other than navy |
+| StoryMaps | Headings, rich text (bold, italic, links), quotes, lists, images by URL, maps, embeds, video, buttons, separators, big numbers, swipe, sidecar slides, timelines; cover type, image and date; a navigation bar; six themes; published | Uploading local images (images are linked by URL, sized 400×300 until opened); map tours, galleries, audio, 360° images, tables, code; a map view per block or slide (maps open at their saved extent); custom theme colours and fonts; collections and briefings |
+| Survey123 | A web-designer draft, or a published survey from an XLSForm (form, layer, form view): 23 question types including signature, file, audio, barcode, line and polygon geometry, rank, calculate and hidden; hints, groups and pages, relevant, constraints, calculations, defaults, read-only, required messages, choice filters; every XLSForm checked by Survey123's converter before anything is saved | Repeats (related tables); external choice lists, `pulldata()` and search appearances; several languages; field lengths and types other than the defaults; a survey on an existing layer (a layer's fields make a new layer); the survey's theme, thank-you screen, schedule and webhooks; advanced options in the web-designer draft (they need `publish`) |
+| Field Maps | Forms for every editable layer: input types from the fields, groups, hints, required and read-only fields, fields shown only when others meet a condition, a photo element; the Offline flag; the link that opens the map in the app (calculated, required and editable rules: `portal_arcade` action=form) | Radio buttons, switches, barcode and text elements; offline map areas; tasks, geofences, tracking, layer templates |
+| Instant Apps | Any template of your organization's gallery; its own settings listed (`action=templates` with a template) and the options checked against them; light or dark theme | Brand colours (custom theme); deep checks of object settings (positions, search sources); content a template needs beyond one web map (Compare: two maps, Attachment Viewer: attachments...) |
+| Experience Builder | 50 templates from Esri, the web map bound to every map widget, the theme's primary colour, published | Choosing layers for lists, tables, charts, filters, queries and bookmarks (`action=templates` names them per template); adding or moving widgets and pages; text content |
+
 ## Development
 
 You need [Node.js](https://nodejs.org) 22 or newer, a Cloudflare account, and OAuth 2.0 credentials from ArcGIS
