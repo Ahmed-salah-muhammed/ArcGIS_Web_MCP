@@ -8,7 +8,7 @@ import { ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
 import { type Envelope, envelope, type ToolSpec } from "../shared/mcp";
 
-/** The Workers free plan allows 50 subrequests per request; most tools make 1-5. */
+/** The Workers free plan allows 50 subrequests per request; most tools make 1-5, and the calls share one budget. */
 export const MAX_CALLS = 10;
 
 export type BatchCall = { tool: string; args?: Record<string, unknown> };

@@ -4,7 +4,7 @@
  * multipart file; publishing returns a job that is polled until it completes.
  */
 import { ArcGISError, hostAllowed } from "../../arcgis";
-import type { Ctx } from "../shared/context";
+import { cleanup, type Ctx } from "../shared/context";
 import { itemCard } from "../shared/format";
 import { base, getItem, resolveFolder, userPath } from "../shared/lookup";
 import { audit, GEOCODE_CREDITS_EACH, MAX_DOWNLOAD_BYTES, MAX_UPLOAD_CHARS, requireConfirm } from "../shared/safety";
@@ -96,6 +96,7 @@ export async function publish(ctx: Ctx, args: PublishArgs) {
 	if (args.url) {
 		const u = new URL(args.url);
 		if (u.protocol !== "https:") throw new ArcGISError("url must be https.", "bad_argument");
+		ctx.budget?.take();
 		const res = await fetch(u.href); // public fetch (global_fetch_strictly_public); no token is sent
 		if (!res.ok) throw new ArcGISError(`Could not download ${u.hostname}: HTTP ${res.status}`, "download_failed");
 		content = await readCapped(res, u.hostname);
@@ -138,7 +139,9 @@ export async function publish(ctx: Ctx, args: PublishArgs) {
 		uploaded = true;
 	}
 	const dropUpload = async () => {
-		if (uploaded) await ctx.request(`${userPath(ctx)}/items/${sourceId}/delete`, { permanentDelete: true }).catch(() => null);
+		if (uploaded) {
+			await cleanup(ctx, () => ctx.request(`${userPath(ctx)}/items/${sourceId}/delete`, { permanentDelete: true }).catch(() => null));
+		}
 	};
 
 	let pp: Record<string, unknown> = {};
@@ -173,7 +176,8 @@ export async function publish(ctx: Ctx, args: PublishArgs) {
 	}
 	const wait = ctx.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 	let status = "processing";
-	for (let i = 0; i < 30 && svc.jobId && status !== "completed"; i++) {
+	// polling stops early when only the requests the answer needs are left: "still processing" beats a cut-off call
+	for (let i = 0; i < 30 && svc.jobId && status !== "completed" && (ctx.budget?.left() ?? Infinity) > 2; i++) {
 		await wait(2000);
 		const st = await ctx.request(`${userPath(ctx)}/items/${svc.serviceItemId}/status`,
 			{ jobId: svc.jobId, jobType: "publish" });

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { publish, readCapped, serviceName } from "../../src/tools/portal_publish/handler";
+import { Budget } from "../../src/tools/shared/context";
 import { fakeCtx, ID, ID2, silence, SVC, USER } from "../helpers";
 
 const routes = (statuses: string[]) => ({
@@ -27,6 +28,19 @@ describe("portal_publish", () => {
 				longitudeFieldName: "LON" } });
 		expect(calls.filter((c) => c.url.endsWith("/status"))).toHaveLength(2);
 		expect(out).toMatchObject({ source_item_id: ID, status: "completed", layers: [{ url: `${SVC}/0` }] });
+	});
+
+	it("stops polling when the call's requests run low, and answers 'still processing'", async () => {
+		silence();
+		const { ctx, calls } = fakeCtx(routes(Array(30).fill("processing")));
+		ctx.budget = new Budget(20);
+		const request = ctx.request;
+		const upload = ctx.upload!;
+		ctx.request = async (url, params) => (ctx.budget!.take(), request(url, params));
+		ctx.upload = async (url, params, file) => (ctx.budget!.take(), upload(url, params, file));
+		const out: any = await publish(ctx, { title: "t", csv_text: "NAME,LAT,LON\nA,30,31", latitude_field: "LAT", longitude_field: "LON" });
+		expect(out.status).toMatch(/^still processing/);
+		expect(calls.length).toBeLessThanOrEqual(17);
 	});
 
 	it("asks before geocoding addresses - and before uploading anything", async () => {

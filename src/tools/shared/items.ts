@@ -3,7 +3,7 @@
  * web address (apps live under it). Parameter names are the ones the ArcGIS API for Python 2.4.3 sends.
  */
 import { ArcGISError } from "../../arcgis";
-import type { Ctx } from "./context";
+import { cleanup, type Ctx } from "./context";
 import { base, requireId, resolveFolder, userPath } from "./lookup";
 
 export async function portalSelf(ctx: Ctx): Promise<any> {
@@ -54,7 +54,9 @@ export async function orRemove<T>(ctx: Ctx, ids: string[], steps: () => Promise<
 	try {
 		return await steps();
 	} catch (e) {
-		for (const id of [...ids].reverse()) await deleteItem(ctx, id).catch(() => undefined);
+		await cleanup(ctx, async () => {
+			for (const id of [...ids].reverse()) await deleteItem(ctx, id).catch(() => undefined);
+		});
 		throw e;
 	}
 }

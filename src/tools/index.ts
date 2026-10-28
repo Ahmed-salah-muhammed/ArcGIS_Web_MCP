@@ -21,7 +21,7 @@ import { tool as portalSearch } from "./portal_search";
 import { tool as portalShare } from "./portal_share";
 import { tool as portalSurvey123 } from "./portal_survey123";
 import { tool as portalWhoami } from "./portal_whoami";
-import { makeCtx } from "./shared/context";
+import { DEFAULT_MAX_SUBREQUESTS, makeCtx } from "./shared/context";
 import { run, type ToolSpec } from "./shared/mcp";
 
 /** Everything portal_batch may call, in the order clients list them. */
@@ -30,10 +30,13 @@ const BATCHABLE = [portalWhoami, portalSearch, portalItem, portalFolders, portal
 
 export const TOOLS: ToolSpec[] = [...BATCHABLE, batchTool(new Map(BATCHABLE.map((t) => [t.name, t]))) as ToolSpec];
 
-export function registerTools(server: McpServer, props: ArcGISProps, extraHosts: string[] = []): void {
-	const ctx = makeCtx(props, extraHosts);
+export function registerTools(server: McpServer, props: ArcGISProps, extraHosts: string[] = [],
+	maxSubrequests = DEFAULT_MAX_SUBREQUESTS): void {
 	for (const t of TOOLS) {
 		server.registerTool(t.name, { title: t.title, description: t.description, inputSchema: t.schema, annotations: t.annotations },
-			async (args: any) => run(ctx.props, () => t.handle(ctx, args)));
+			async (args: any) => {
+				const ctx = makeCtx(props, extraHosts, maxSubrequests); // a fresh request budget per call
+				return run(ctx.props, () => t.handle(ctx, args));
+			});
 	}
 }

@@ -23,10 +23,16 @@ function extraHosts(): string[] {
 	return (env.ARCGIS_EXTRA_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean);
 }
 
+/** Cloudflare's subrequest limit per call for this account's plan (MAX_SUBREQUESTS in wrangler.jsonc). */
+function maxSubrequests(): number | undefined {
+	const n = Number(env.MAX_SUBREQUESTS);
+	return Number.isInteger(n) && n > 5 ? n : undefined;
+}
+
 function createServer() {
 	const server = new McpServer(MCP_SERVER_INFO, { instructions: MCP_INSTRUCTIONS });
 	const props = getMcpAuthContext()?.props as ArcGISProps | undefined;
-	if (props?.accessToken) registerTools(server, props, extraHosts());
+	if (props?.accessToken) registerTools(server, props, extraHosts(), maxSubrequests());
 	return server;
 }
 

@@ -220,6 +220,7 @@ function limits() {
 		["Publishing", "Up to 5 MB of CSV or GeoJSON text per call"],
 		["Attachments", "Up to 10 MB per file"],
 		["Batch", "Up to 10 tool calls per portal_batch"],
+		["Requests to ArcGIS", "Up to 50 per call on Cloudflare's free plan; a call that needs more stops with subrequest_limit"],
 	].map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
 	return page("limits", "Guides", "Limits", `
   <p class="lead">Limits that keep every call fast and inside the free hosting plan.</p>

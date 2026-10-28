@@ -134,7 +134,7 @@ export async function exportItem(ctx: Ctx, args: { item_id: string; format?: str
 	if (!res.exportItemId) throw new ArcGISError(`The export did not start: ${JSON.stringify(res).slice(0, 200)}`, "export_failed");
 	const wait = ctx.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 	let status = "processing";
-	for (let i = 0; i < 25 && res.jobId && status !== "completed"; i++) {
+	for (let i = 0; i < 25 && res.jobId && status !== "completed" && (ctx.budget?.left() ?? Infinity) > 1; i++) {
 		await wait(2000);
 		const st = await ctx.request(`${userPath(ctx)}/items/${res.exportItemId}/status`, { jobId: res.jobId, jobType: "export" });
 		status = st.status;
