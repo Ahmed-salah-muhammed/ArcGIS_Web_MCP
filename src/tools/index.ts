@@ -9,6 +9,7 @@ import { tool as portalApp } from "./portal_app";
 import { tool as portalArcade } from "./portal_arcade";
 import { batchTool } from "./portal_batch";
 import { tool as portalFolders } from "./portal_folders";
+import { tool as portalGeocode } from "./portal_geocode";
 import { tool as portalGroups } from "./portal_groups";
 import { tool as portalItem } from "./portal_item";
 import { tool as portalLayerEdit } from "./portal_layer_edit";
@@ -25,7 +26,7 @@ import { DEFAULT_MAX_SUBREQUESTS, makeCtx } from "./shared/context";
 import { run, type ToolSpec } from "./shared/mcp";
 
 /** Everything portal_batch may call, in the order clients list them. */
-const BATCHABLE = [portalWhoami, portalSearch, portalItem, portalFolders, portalShare, portalPublish, portalLayerQuery,
+const BATCHABLE = [portalWhoami, portalSearch, portalGeocode, portalItem, portalFolders, portalShare, portalPublish, portalLayerQuery,
 	portalLayerEdit, portalLayerSchema, portalMap, portalArcade, portalApp, portalSurvey123, portalGroups, portalRest] as ToolSpec[];
 
 export const TOOLS: ToolSpec[] = [...BATCHABLE, batchTool(new Map(BATCHABLE.map((t) => [t.name, t]))) as ToolSpec];

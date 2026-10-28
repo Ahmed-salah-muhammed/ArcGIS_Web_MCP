@@ -42,6 +42,16 @@ export const TOOL_DOCS: ToolDoc[] = [
 		examples: ["Find my feature layers about roads.", "List the dashboards shared in my organization."],
 	},
 	{
+		name: "portal_geocode", category: "read",
+		summary: "Find places with your organization's geocoder: an address to coordinates, or coordinates to an address.",
+		actions: [
+			{ name: "find", does: "Places matching an address, with [longitude, latitude] and a score; country and near narrow it" },
+			{ name: "reverse", does: "The address at a [longitude, latitude]" },
+		],
+		examples: ["Where is Cairo University?", "What is the address at 31.2357, 30.0444?"],
+		notes: ["For looking up only: no credits, nothing saved. To geocode a whole table into a layer, use portal_publish with address_fields."],
+	},
+	{
 		name: "portal_item", category: "content",
 		summary: "Everything about one item by its id: read it, change it, move it, protect it, export it, or describe it automatically.",
 		actions: [
