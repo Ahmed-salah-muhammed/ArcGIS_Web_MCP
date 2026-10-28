@@ -56,7 +56,11 @@ export const tool = defineTool({
 		+ "fieldmaps (webmap_id: forms for its editable layers from their fields, fields = which, form = {groups [{label, fields, "
 		+ "collapsed}], hints {FIELD: text}, required [FIELD], read_only [FIELD], show_when {FIELD: {OTHER: condition}}, photos true|label}, "
 		+ "options.offline, options.overwrite_forms) | "
-		+ "exb_developer (registers Experience Builder Developer Edition; returns the client ID and the steps). "
+		+ "exb_developer (registers Experience Builder Developer Edition; returns the client ID and the steps) | "
+		+ "exb_widget (a custom widget for Developer Edition: custom_widget {name, label, description, data none|layer|map|layer_and_map}, "
+		+ "exb_version; returns its files in Esri's widget layout (manifest.json, config.json, icon.svg, README.md, src/config.ts, "
+		+ "src/runtime/widget.tsx, src/setting/setting.tsx, translations) and the steps to put them in client/your-extensions/widgets; "
+		+ "creates nothing in ArcGIS). "
 		+ "Returns the new item and the link to open it.",
 	schema: z.object({
 		action: z.enum(["templates", "create"]).optional().describe("Default create"),
@@ -177,6 +181,10 @@ export const tool = defineTool({
 		theme_color: z.string().optional().describe("experience: the theme's primary colour #rrggbb"),
 		header_color: z.string().optional().describe("experience built from widgets: the header colour #rrggbb"),
 		redirect_uris: z.array(z.string()).optional().describe("exb_developer: default https://localhost:3001/"),
+		custom_widget: z.object({ name: z.string().max(50), label: z.string().max(60).optional(), description: z.string().max(300).optional(),
+			data: z.enum(["none", "layer", "map", "layer_and_map"]).optional(), author: z.string().max(80).optional() }).optional()
+			.describe("exb_widget: the widget; data = what it works with (default layer)"),
+		exb_version: z.string().optional().describe("exb_widget: Developer Edition version, default 1.21.0"),
 		questions: z.array(z.object({
 			type: z.enum(QUESTION_TYPES),
 			label: z.string(),

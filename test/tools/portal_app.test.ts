@@ -1,3 +1,4 @@
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { autoWidgets, chartGuides, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
 import { arcadeTest, filterSql } from "../../src/tools/portal_app/filters";
@@ -987,6 +988,52 @@ describe("portal_app: Field Maps", () => {
 		expect(out.layers[0]).toMatchObject({ groups: ["Details"], photos: true, fields: ["TYPE", "INSTALLED", "NOTE", "HEIGHT"] });
 		await expect(app(ctx, { kind: "fieldmaps", webmap_id: MAP, options: { overwrite_forms: true }, form: { required: ["NOPE"] } }))
 			.rejects.toThrow(/no editable field 'NOPE'/);
+	});
+});
+
+describe("portal_app: custom widgets for Experience Builder Developer Edition", () => {
+	const syntax = (path: string, code: string) => {
+		const out = ts.transpileModule(code, { fileName: path, reportDiagnostics: true,
+			compilerOptions: { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.ESNext } });
+		return (out.diagnostics ?? []).map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"));
+	};
+
+	for (const data of ["none", "layer", "map", "layer_and_map"] as const) {
+		it(`data=${data}: Esri's widget layout, valid TSX, every string it uses translated`, async () => {
+			const { ctx, calls } = fakeCtx(common());
+			const out: any = await app(ctx, { kind: "exb_widget", custom_widget: { name: "Site List", data, description: "Lists sites." } } as any);
+			expect(calls).toHaveLength(0);
+			expect(out).toMatchObject({ widget: "site-list", folder: "client/your-extensions/widgets/site-list", exb_version: "1.21.0" });
+			expect(Object.keys(out.files).sort()).toEqual(["README.md", "config.json", "icon.svg", "manifest.json", "src/config.ts",
+				"src/runtime/translations/default.ts", "src/runtime/widget.tsx", "src/setting/setting.tsx", "src/setting/translations/default.ts"]);
+			const manifest = JSON.parse(out.files["manifest.json"]);
+			expect(manifest).toMatchObject({ name: "site-list", label: "Site List", type: "widget", exbVersion: "1.21.0", translatedLocales: ["en"] });
+			expect(manifest.dependency).toBe(data.includes("map") ? "jimu-arcgis" : undefined);
+			for (const f of ["src/runtime/widget.tsx", "src/setting/setting.tsx", "src/config.ts", "src/runtime/translations/default.ts"]) {
+				expect(syntax(f, out.files[f])).toEqual([]);
+			}
+			const widget = out.files["src/runtime/widget.tsx"];
+			const setting = out.files["src/setting/setting.tsx"];
+			expect(widget.includes("DataSourceComponent")).toBe(data.includes("layer"));
+			expect(widget.includes("JimuMapViewComponent")).toBe(data.includes("map"));
+			expect(setting.includes("DataSourceSelector")).toBe(data.includes("layer"));
+			expect(setting.includes("MapWidgetSelector")).toBe(data.includes("map"));
+			expect(widget).not.toContain("jimu-for-builder");
+			// every translate('key') has its string in that surface's translations
+			const keys = (code: string) => [...code.matchAll(/translate\('(\w+)'/g)].map((m) => m[1]);
+			for (const [code, file] of [[widget, "src/runtime/translations/default.ts"], [setting, "src/setting/translations/default.ts"]]) {
+				const messages = out.files[file];
+				for (const k of keys(code)) expect(messages).toContain(`${k}:`);
+			}
+			expect(out.steps.some((s: string) => s.includes("npm run tscheck"))).toBe(true);
+		});
+	}
+
+	it("names and versions are checked", async () => {
+		const { ctx } = fakeCtx(common());
+		await expect(app(ctx, { kind: "exb_widget" } as any)).rejects.toThrow(/custom_widget.name is required/);
+		await expect(app(ctx, { kind: "exb_widget", custom_widget: { name: "9 lives" } } as any)).rejects.toThrow(/starting with a letter/);
+		await expect(app(ctx, { kind: "exb_widget", custom_widget: { name: "x-y" }, exb_version: "latest" } as any)).rejects.toThrow(/exb_version/);
 	});
 });
 

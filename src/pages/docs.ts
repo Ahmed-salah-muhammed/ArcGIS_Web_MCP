@@ -199,6 +199,7 @@ export const TOOL_DOCS: ToolDoc[] = [
 			{ name: "kind=survey", does: "A Survey123 draft that opens in the web designer (portal_survey123 also makes XLSForms for Connect)" },
 			{ name: "kind=fieldmaps", does: "A web map ready for Field Maps: forms from the layers' fields with groups, hints, required and read-only fields, fields shown only when others meet a condition, and a photo element; optional offline" },
 			{ name: "kind=exb_developer", does: "Registers Experience Builder Developer Edition and returns its client ID and setup steps" },
+			{ name: "kind=exb_widget", does: "A custom widget for Experience Builder Developer Edition, in Esri's widget layout (manifest, config, icon, README, runtime and settings components, translations) working with a layer, a map or both, and the steps to run it from client/your-extensions/widgets" },
 		],
 		examples: ["Make a dashboard of the inspections layer with a count, a pie by status and a table.",
 			"An interactive dashboard of the users layer: owners and users counts in tabs, a pie by governorate, sign-ups per day.",

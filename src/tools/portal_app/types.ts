@@ -1,7 +1,7 @@
 /** The arguments portal_app takes, shared by every kind of app. */
 import type { Condition, DateUnit } from "./filters";
 
-export const APP_KINDS = ["instant", "dashboard", "experience", "storymap", "survey", "fieldmaps", "exb_developer"] as const;
+export const APP_KINDS = ["instant", "dashboard", "experience", "storymap", "survey", "fieldmaps", "exb_developer", "exb_widget"] as const;
 export type AppKind = (typeof APP_KINDS)[number];
 
 export const WIDGET_TYPES = ["map", "indicator", "gauge", "pie", "bar", "line", "list", "table", "details", "legend", "text", "embed",
@@ -194,6 +194,10 @@ export type AppArgs = {
 	theme_color?: string;
 	/** experience built from widgets: the header's colour (#rrggbb). */
 	header_color?: string;
+	/** exb_widget: the custom widget to write for Experience Builder Developer Edition. */
+	custom_widget?: { name: string; label?: string; description?: string; data?: "none" | "layer" | "map" | "layer_and_map"; author?: string };
+	/** exb_widget: the Developer Edition version (client/package.json's exb-client version); default 1.21.0. */
+	exb_version?: string;
 	redirect_uris?: string[];
 	questions?: { type: string; label: string; choices?: (string | { value: string; label: string; filter?: string })[]; required?: boolean;
 		hint?: string; name?: string; group?: string; relevant?: string; constraint?: string; constraint_message?: string; calculation?: string;

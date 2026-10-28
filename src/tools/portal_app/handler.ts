@@ -6,6 +6,7 @@ import { createDashboard, WIDGET_HELP } from "./dashboard";
 import { registerExbDeveloper } from "./developer";
 import { EXB_WIDGET_HELP } from "./exb-build";
 import { createExperience, experienceTemplates } from "./experience";
+import { customWidget } from "./exb-widget";
 import { prepareFieldMaps } from "./fieldmaps";
 import { createInstant, instantTemplates, templateSettings } from "./instant";
 import { BLOCK_HELP, createStorymap, STORY_THEMES } from "./storymap";
@@ -13,7 +14,8 @@ import { createSurvey } from "../portal_survey123/draft";
 import { APP_KINDS, type AppArgs } from "./types";
 
 const CREATE = { instant: createInstant, dashboard: createDashboard, experience: createExperience, storymap: createStorymap,
-	survey: createSurvey, fieldmaps: prepareFieldMaps, exb_developer: registerExbDeveloper } as const;
+	survey: createSurvey, fieldmaps: prepareFieldMaps, exb_developer: registerExbDeveloper,
+	exb_widget: async (_ctx: Ctx, args: AppArgs) => customWidget(args) } as const;
 
 export async function app(ctx: Ctx, args: AppArgs) {
 	const kind = args.kind;
@@ -33,6 +35,7 @@ export async function app(ctx: Ctx, args: AppArgs) {
 		throw new ArcGISError(`${kind} has no templates.`, "bad_argument");
 	}
 	const out: any = await CREATE[kind](ctx, args);
-	audit(ctx.props, { tool: "portal_app", action: `create ${kind}`, target: out.app?.id ?? out.map?.id ?? null, ok: true });
+	// a custom widget is files for the user's own machine: nothing changed in ArcGIS, nothing to audit
+	if (kind !== "exb_widget") audit(ctx.props, { tool: "portal_app", action: `create ${kind}`, target: out.app?.id ?? out.map?.id ?? null, ok: true });
 	return { kind, ...out };
 }
