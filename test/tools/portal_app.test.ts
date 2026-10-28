@@ -30,6 +30,9 @@ function common(extra: Record<string, (p: Record<string, unknown>) => unknown> =
 	};
 }
 const sent = (calls: { url: string; params: Record<string, unknown> }[], suffix: string) => calls.filter((c) => c.url.endsWith(suffix));
+/** Resources go up as files: their params, with the file's content as text. */
+const resources = (calls: { url: string; params: Record<string, unknown>; file?: unknown }[]) =>
+	sent(calls, "/addResources").map((c: any) => ({ ...c.params, text: c.file?.content, file: c.file }));
 
 describe("portal_app: Instant Apps", () => {
 	const templates = () => ({ results: [
@@ -524,7 +527,7 @@ describe("portal_app: executive dashboards", () => {
 	it("the navy theme is saved as the dashboard's resource; widgets get the executive look", async () => {
 		const { out, data, byName, calls } = await build();
 		expect(data.theme).toEqual({ id: "user", type: "resource" });
-		const resource = sent(calls, "/addResources")[0].params;
+		const resource = resources(calls)[0];
 		expect(resource).toMatchObject({ resourcesPrefix: "themes", fileName: "user.json" });
 		expect(json(resource.text)).toEqual(NAVY_THEME);
 		expect(out).toMatchObject({ theme: "navy", style: "executive" });
@@ -607,8 +610,13 @@ describe("portal_app: Experience Builder", () => {
 		const out: any = await app(ctx, { kind: "experience", webmap_id: MAP });
 		expect(calls.find((c) => c.url.endsWith("/billboard/config.json"))!.via).toBe("public");
 		expect(String(sent(calls, "/addItem")[0].params.typeKeywords)).toContain("status: Published");
-		const res = sent(calls, "/addResources")[0].params;
+		const res = resources(calls)[0];
 		expect(res).toMatchObject({ resourcesPrefix: "config", fileName: "config.json" });
+		// as a file: ArcGIS sanitizes a resource sent as text (the builder then cannot open the app)
+		const upload = sent(calls, "/addResources")[0] as any;
+		expect(upload.via).toBe("upload");
+		expect(upload.params.text).toBeUndefined();
+		expect(upload.file).toMatchObject({ name: "config.json", type: "application/json" });
 		const config = json(res.text);
 		expect(config.exbVersion).toBe("1.14.0");
 		expect(config.dataSources.dataSource_1).toEqual({ id: "dataSource_1", type: "WEB_MAP", sourceLabel: "Parks", itemId: MAP,
@@ -624,7 +632,7 @@ describe("portal_app: Experience Builder", () => {
 		silence();
 		const { ctx, calls } = fakeCtx(common({ "/billboard/config.json": template }));
 		const out: any = await app(ctx, { kind: "experience", theme_color: "#1A4780" });
-		expect(json(sent(calls, "/addResources")[0].params.text).customTheme).toEqual({ colors: { primary: "#1a4780" } });
+		expect(json(resources(calls)[0].text).customTheme).toEqual({ colors: { primary: "#1a4780" } });
 		expect(out.theme_color).toBe("#1a4780");
 		await expect(app(ctx, { kind: "experience", theme_color: "navy" })).rejects.toThrow(/#rrggbb/);
 	});
@@ -663,7 +671,7 @@ describe("portal_app: Experience Builder apps built from widgets", () => {
 		silence();
 		const { ctx, calls } = fakeCtx(routes());
 		const out: any = await app(ctx, { kind: "experience", webmap_id: MAP, ...args } as any);
-		const config = json(sent(calls, "/addResources")[0].params.text);
+		const config = json(resources(calls)[0].text);
 		const byLabel = (label: string) => Object.values<any>(config.widgets).find((w) => w.label === label);
 		return { out, config, byLabel, calls };
 	};
@@ -807,7 +815,7 @@ describe("portal_app: StoryMaps", () => {
 			{ heading: "The <b>river</b>", text: "First paragraph.\n\nSecond paragraph.", webmap_id: MAP }] });
 		const kw = String(sent(calls, "/addItem")[0].params.typeKeywords).split(",");
 		expect(kw).toEqual(expect.arrayContaining(["StoryMap", "smstatuspublished", "smversionpublished:26.39.1367"]));
-		const [draft, published] = sent(calls, "/addResources").map((c) => c.params);
+		const [draft, published] = resources(calls);
 		expect(String(draft.fileName)).toMatch(/^draft_\d{13}\.json$/);
 		expect(draft.access).toBe("private");
 		expect(published.fileName).toBe("published_data.json");
@@ -915,7 +923,7 @@ describe("portal_app: Survey123", () => {
 		expect(sent(calls, `/items/${ID2}/update`)[0].params).toEqual({ title: "Site <inspection>",
 			typeKeywords: `Survey123,Survey123 Hub,OwnerView,Source,${NEW}` });
 		expect(sent(calls, "/addRelationship")[0].params).toEqual({ originItemId: NEW, destinationItemId: ID2, relationshipType: "Survey2Service" });
-		const res = sent(calls, "/addResources")[0].params;
+		const res = resources(calls)[0];
 		expect(res).toMatchObject({ resourcesPrefix: "surveyDraft", fileName: "form.json" });
 		const form = json(res.text);
 		expect(form).toMatchObject({ layerName: "survey", portalUrl: "https://www.arcgis.com", version: "3.26",
@@ -942,7 +950,7 @@ describe("portal_app: Survey123", () => {
 		}));
 		const out: any = await app(ctx, { kind: "survey", title: "Poles", target: ID });
 		expect(out.from).toBe("the fields of poles");
-		const qs = json(sent(calls, "/addResources")[0].params.text).questions;
+		const qs = json(resources(calls)[0].text).questions;
 		expect(qs.map((q: any) => q.type.replace("esriQuestionType", ""))).toEqual(["GeoPoint", "Dropdown", "Date", "Number", "TextArea"]);
 		expect(qs[1].choices.items[0]).toEqual({ isNameModified: false, value: "W", label: "Wood" });
 		expect(qs[3].isRequired).toBe(true);
