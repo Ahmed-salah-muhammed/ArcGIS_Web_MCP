@@ -1,7 +1,7 @@
 /** Who made this server and how it introduces itself to every MCP client on connect. */
 import { AVATAR } from "./avatar";
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.4.0";
 
 /**
  * `photo` is a data:image or https URL shown in the badge's circle; without one, the initials are.

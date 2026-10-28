@@ -1,6 +1,8 @@
 # Copy to .dev.vars (gitignored) for `npm run dev`. Never commit real values.
+# All four are in wrangler.jsonc `secrets.required`: `wrangler dev` and `wrangler deploy` expect every one of them.
 ARCGIS_CLIENT_ID=<client id of your ArcGIS OAuth 2.0 credentials>
 COOKIE_ENCRYPTION_KEY=<random string, e.g. output of: openssl rand -hex 32>
-# Optional: the contact form on the documentation page (https://resend.com)
-# RESEND_API_KEY=<API key of your Resend account>
-# CONTACT_TO=<the address the messages go to>
+# The contact form on the documentation page (https://resend.com). A fork without the form removes these two
+# from `secrets.required` in wrangler.jsonc (the form then answers "not set up").
+RESEND_API_KEY=<API key of your Resend account>
+CONTACT_TO=<the address the messages go to>

@@ -4,9 +4,11 @@
  * title from its basemap gallery group.
  */
 import { ArcGISError, hostAllowed } from "../../arcgis";
+import { VERSION } from "../../pages/identity";
 import type { Ctx } from "../shared/context";
 import { itemCard } from "../shared/format";
-import { base, requireId, resolveFolder } from "../shared/lookup";
+import { addItem } from "../shared/items";
+import { base, requireId } from "../shared/lookup";
 import { buildRenderer } from "../shared/renderer";
 import { audit } from "../shared/safety";
 
@@ -168,18 +170,17 @@ export async function webmap(ctx: Ctx, args: MapArgs) {
 		}
 		const data = { operationalLayers: ops, baseMap: await basemapFor(ctx, args.basemap),
 			spatialReference: { wkid: 102100, latestWkid: 3857 }, version: "2.31", authoringApp: "ArcGIS Web MCP",
-			authoringAppVersion: "0.2.0" };
-		const folderId = await resolveFolder(ctx, args.folder, true);
+			authoringAppVersion: VERSION };
 		const extent = unionExtent(extents);
-		const added = await ctx.request(`${base(ctx)}/content/users/${encodeURIComponent(ctx.props.username)}${folderId ? `/${folderId}` : ""}/addItem`, {
+		const { id } = await addItem(ctx, args.folder, {
 			type: "Web Map", title: args.title, tags: (args.tags ?? ["arcgis-web-mcp"]).join(","),
 			snippet: args.snippet ?? "Created by ArcGIS Web MCP", text: data,
 			typeKeywords: "ArcGIS Online,Explorer Web Map,Map,Online Map,Web Map",
 			extent: extent ? extent.flat().join(",") : undefined,
 		});
-		const saved = await ctx.request(`${base(ctx)}/content/items/${added.id}/data`);
-		const item = await ctx.request(`${base(ctx)}/content/items/${added.id}`);
-		audit(ctx.props, { tool: "portal_map", action, target: added.id, ok: Boolean(added.success) });
+		const saved = await ctx.request(`${base(ctx)}/content/items/${id}/data`);
+		const item = await ctx.request(`${base(ctx)}/content/items/${id}`);
+		audit(ctx.props, { tool: "portal_map", action, target: id, ok: true });
 		return { webmap: itemCard(item, ctx.props.portal), ...summary(saved) };
 	}
 	if (!args.item_id) throw new ArcGISError("item_id (the web map) is required.", "bad_argument");

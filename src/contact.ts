@@ -1,8 +1,8 @@
 /**
  * The documentation page's contact form: POST /contact (JSON) -> one email through Resend (https://resend.com).
  *
- * Nothing personal is in the code: the recipient and the API key are Worker secrets (CONTACT_TO, RESEND_API_KEY),
- * and without them the form answers that it is not set up. Same-origin requests only, a honeypot field, and limits
+ * The recipient and the API key are Worker secrets (CONTACT_TO, RESEND_API_KEY), and without them the form answers
+ * that it is not set up. Same-origin requests only, a honeypot field, and limits
  * kept in KV (per visitor per hour, and per day for the whole site, under Resend's free 100 emails a day).
  */
 import { esc } from "./pages/credit";

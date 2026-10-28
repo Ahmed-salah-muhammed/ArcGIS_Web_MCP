@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { publish, serviceName } from "../../src/tools/portal_publish/handler";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { publish, readCapped, serviceName } from "../../src/tools/portal_publish/handler";
+import { Budget } from "../../src/tools/shared/context";
 import { fakeCtx, ID, ID2, silence, SVC, USER } from "../helpers";
 
 const routes = (statuses: string[]) => ({
@@ -29,6 +30,19 @@ describe("portal_publish", () => {
 		expect(out).toMatchObject({ source_item_id: ID, status: "completed", layers: [{ url: `${SVC}/0` }] });
 	});
 
+	it("stops polling when the call's requests run low, and answers 'still processing'", async () => {
+		silence();
+		const { ctx, calls } = fakeCtx(routes(Array(30).fill("processing")));
+		ctx.budget = new Budget(20);
+		const request = ctx.request;
+		const upload = ctx.upload!;
+		ctx.request = async (url, params) => (ctx.budget!.take(), request(url, params));
+		ctx.upload = async (url, params, file) => (ctx.budget!.take(), upload(url, params, file));
+		const out: any = await publish(ctx, { title: "t", csv_text: "NAME,LAT,LON\nA,30,31", latitude_field: "LAT", longitude_field: "LON" });
+		expect(out.status).toMatch(/^still processing/);
+		expect(calls.length).toBeLessThanOrEqual(17);
+	});
+
 	it("asks before geocoding addresses - and before uploading anything", async () => {
 		const { ctx, calls } = fakeCtx(routes([]));
 		await expect(publish(ctx, { title: "t", csv_text: "ADDR\n1 Main St\n2 Main St", address_fields: { Address: "ADDR" } }))
@@ -51,5 +65,42 @@ describe("portal_publish", () => {
 		await expect(publish(ctx, { title: "t", url: "http://example.com/a.csv" })).rejects.toThrow(/https/);
 		expect(calls).toHaveLength(0);
 		expect(serviceName("  Cairo / Schools (2026) ")).toBe("Cairo_Schools_2026");
+	});
+
+	describe("url downloads", () => {
+		afterEach(() => vi.unstubAllGlobals());
+
+		/** A body of `chunks` pieces of `size` bytes each; counts how many were pulled. */
+		const stream = (chunks: number, size: number) => {
+			let pulled = 0;
+			const body = new ReadableStream<Uint8Array>({
+				pull(c) {
+					if (pulled++ < chunks) c.enqueue(new Uint8Array(size).fill(65));
+					else c.close();
+				},
+			});
+			return { body, pulled: () => pulled };
+		};
+
+		it("refuses by Content-Length before reading anything", async () => {
+			const s = stream(5, 10);
+			const res = new Response(s.body, { headers: { "Content-Length": "999" } });
+			await expect(readCapped(res, "example.com", 100)).rejects.toMatchObject({ code: "too_large" });
+			expect(s.pulled()).toBe(0);
+		});
+
+		it("stops reading once a stream passes the limit", async () => {
+			const s = stream(1000, 10);
+			await expect(readCapped(new Response(s.body), "example.com", 100)).rejects.toMatchObject({ code: "too_large" });
+			expect(s.pulled()).toBeLessThan(20);
+			expect(await readCapped(new Response(stream(3, 10).body), "example.com", 100)).toBe("A".repeat(30));
+		});
+
+		it("publish refuses a huge url without creating anything", async () => {
+			vi.stubGlobal("fetch", async () => new Response("x", { headers: { "Content-Length": String(100_000_000) } }));
+			const { ctx, calls } = fakeCtx({});
+			await expect(publish(ctx, { title: "t", url: "https://example.com/big.csv" })).rejects.toMatchObject({ code: "too_large" });
+			expect(calls).toHaveLength(0);
+		});
 	});
 });

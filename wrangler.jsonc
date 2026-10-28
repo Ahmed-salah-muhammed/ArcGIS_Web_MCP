@@ -34,6 +34,8 @@
 		"ARCGIS_PORTAL_URL": "https://www.arcgis.com",
 		// Comma-separated extra hosts allowed to receive the user's token (e.g. federated servers on another host)
 		"ARCGIS_EXTRA_HOSTS": "",
+		// Requests to ArcGIS one tool call may make: Cloudflare allows 50 per call on the free plan; raise it on a paid plan
+		"MAX_SUBREQUESTS": "50",
 		// Sender of the contact form's emails. Resend's test sender only delivers to your own Resend account's
 		// address; to send from your domain, verify it in Resend and use e.g. "ArcGIS Web MCP <contact@your.domain>"
 		"CONTACT_FROM": "ArcGIS Web MCP <onboarding@resend.dev>"

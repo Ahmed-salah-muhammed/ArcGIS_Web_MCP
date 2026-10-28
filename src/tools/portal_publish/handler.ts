@@ -4,10 +4,10 @@
  * multipart file; publishing returns a job that is polled until it completes.
  */
 import { ArcGISError, hostAllowed } from "../../arcgis";
-import type { Ctx } from "../shared/context";
+import { cleanup, type Ctx } from "../shared/context";
 import { itemCard } from "../shared/format";
 import { base, getItem, resolveFolder, userPath } from "../shared/lookup";
-import { audit, GEOCODE_CREDITS_EACH, MAX_UPLOAD_CHARS, requireConfirm } from "../shared/safety";
+import { audit, GEOCODE_CREDITS_EACH, MAX_DOWNLOAD_BYTES, MAX_UPLOAD_CHARS, requireConfirm } from "../shared/safety";
 
 export type PublishArgs = {
 	title: string;
@@ -36,6 +36,36 @@ const ITEM_FILE_TYPES: Record<string, string> = {
 	CSV: "csv", GeoJson: "geojson", Shapefile: "shapefile", "File Geodatabase": "fileGeodatabase",
 	"Microsoft Excel": "excel", GeoPackage: "geopackage",
 };
+
+const TOO_LARGE_HINT = "Upload large files in ArcGIS Online, then publish them with item_id.";
+
+/**
+ * A download's text, refused as soon as it passes maxBytes (by its Content-Length, or while it streams in), so a
+ * huge file never sits whole in the Worker's memory before the size check.
+ */
+export async function readCapped(res: Response, host: string, maxBytes = MAX_DOWNLOAD_BYTES): Promise<string> {
+	const tooLarge = () => new ArcGISError(`The file at ${host} is larger than ${maxBytes} bytes. ${TOO_LARGE_HINT}`, "too_large");
+	if (Number(res.headers.get("Content-Length")) > maxBytes) {
+		await res.body?.cancel().catch(() => undefined);
+		throw tooLarge();
+	}
+	if (!res.body) return "";
+	const reader = res.body.getReader();
+	const decoder = new TextDecoder();
+	let text = "";
+	let size = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		size += value.length;
+		if (size > maxBytes) {
+			await reader.cancel().catch(() => undefined);
+			throw tooLarge();
+		}
+		text += decoder.decode(value, { stream: true });
+	}
+	return text + decoder.decode();
+}
 
 async function availableName(ctx: Ctx, wanted: string): Promise<string> {
 	const orgId = ctx.props.orgId;
@@ -66,14 +96,15 @@ export async function publish(ctx: Ctx, args: PublishArgs) {
 	if (args.url) {
 		const u = new URL(args.url);
 		if (u.protocol !== "https:") throw new ArcGISError("url must be https.", "bad_argument");
+		ctx.budget?.take();
 		const res = await fetch(u.href); // public fetch (global_fetch_strictly_public); no token is sent
 		if (!res.ok) throw new ArcGISError(`Could not download ${u.hostname}: HTTP ${res.status}`, "download_failed");
-		content = await res.text();
+		content = await readCapped(res, u.hostname);
 		kind = /\.(geo)?json(\?|$)/i.test(u.pathname) || content.trimStart().startsWith("{") ? "geojson" : "csv";
 	}
 	if (content !== null && content.length > MAX_UPLOAD_CHARS) {
-		throw new ArcGISError(`The data is ${content.length} characters; the limit here is ${MAX_UPLOAD_CHARS}. Upload `
-			+ "large files in ArcGIS Online, then publish them with item_id.", "too_large");
+		throw new ArcGISError(`The data is ${content.length} characters; the limit here is ${MAX_UPLOAD_CHARS}. ${TOO_LARGE_HINT}`,
+			"too_large");
 	}
 
 	// Geocoding spends credits: ask BEFORE uploading anything, so a refusal leaves no orphan item behind.
@@ -108,7 +139,9 @@ export async function publish(ctx: Ctx, args: PublishArgs) {
 		uploaded = true;
 	}
 	const dropUpload = async () => {
-		if (uploaded) await ctx.request(`${userPath(ctx)}/items/${sourceId}/delete`, { permanentDelete: true }).catch(() => null);
+		if (uploaded) {
+			await cleanup(ctx, () => ctx.request(`${userPath(ctx)}/items/${sourceId}/delete`, { permanentDelete: true }).catch(() => null));
+		}
 	};
 
 	let pp: Record<string, unknown> = {};
@@ -143,7 +176,8 @@ export async function publish(ctx: Ctx, args: PublishArgs) {
 	}
 	const wait = ctx.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 	let status = "processing";
-	for (let i = 0; i < 30 && svc.jobId && status !== "completed"; i++) {
+	// polling stops early when only the requests the answer needs are left: "still processing" beats a cut-off call
+	for (let i = 0; i < 30 && svc.jobId && status !== "completed" && (ctx.budget?.left() ?? Infinity) > 2; i++) {
 		await wait(2000);
 		const st = await ctx.request(`${userPath(ctx)}/items/${svc.serviceItemId}/status`,
 			{ jobId: svc.jobId, jobType: "publish" });

@@ -65,6 +65,6 @@ describe("portal_batch", () => {
 
 	it("is registered last, after every tool it can call", () => {
 		expect(TOOLS.map((t) => t.name).at(-1)).toBe("portal_batch");
-		expect(TOOLS).toHaveLength(16);
+		expect(TOOLS).toHaveLength(17);
 	});
 });

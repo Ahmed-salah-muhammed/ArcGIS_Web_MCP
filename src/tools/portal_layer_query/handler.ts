@@ -1,6 +1,7 @@
 /**
  * portal_layer_query: read a feature layer or table: describe (fields, capabilities, count) | query (paged rows,
- * dates as ISO UTC) | count | stats ("sum:POP" shorthand, group_by).
+ * dates as ISO UTC) | count | stats ("sum:POP" shorthand, group_by). query, count and stats also filter by place:
+ * a point, a box or any geometry, optionally within a distance of it.
  */
 import { ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
@@ -23,7 +24,73 @@ export type LayerQueryArgs = {
 	return_geometry?: boolean;
 	stats?: (string | Record<string, unknown>)[];
 	group_by?: string;
+	out_sr?: number;
+} & SpatialArgs;
+
+export type SpatialArgs = {
+	geometry?: number[] | Record<string, unknown>;
+	geometry_sr?: number;
+	spatial_rel?: keyof typeof SPATIAL_RELS;
+	distance?: number;
+	units?: keyof typeof DISTANCE_UNITS;
 };
+
+export const SPATIAL_RELS = { intersects: "esriSpatialRelIntersects", contains: "esriSpatialRelContains",
+	within: "esriSpatialRelWithin", crosses: "esriSpatialRelCrosses", touches: "esriSpatialRelTouches",
+	overlaps: "esriSpatialRelOverlaps", envelope_intersects: "esriSpatialRelEnvelopeIntersects" } as const;
+export const DISTANCE_UNITS = { meters: "esriSRUnit_Meter", kilometers: "esriSRUnit_Kilometer", feet: "esriSRUnit_Foot",
+	miles: "esriSRUnit_StatuteMile" } as const;
+
+/**
+ * The query parameters of a spatial filter: geometry is a point [x, y], a box [xmin, ymin, xmax, ymax] or Esri
+ * geometry JSON (x/y, rings, paths, points or xmin...), in longitude/latitude unless geometry_sr (or the geometry's
+ * own spatialReference) says otherwise. distance turns it into "within that distance of the geometry".
+ */
+export function spatialFilter(args: SpatialArgs): Record<string, unknown> {
+	if (args.geometry === undefined) {
+		if (args.distance !== undefined || args.spatial_rel) {
+			throw new ArcGISError("distance and spatial_rel need a geometry (e.g. [31.24, 30.04] for a point).", "bad_argument");
+		}
+		return {};
+	}
+	const g = args.geometry;
+	let geometry: Record<string, unknown>;
+	let geometryType: string | null = null;
+	if (Array.isArray(g)) {
+		if (!g.every((n) => typeof n === "number" && Number.isFinite(n))) throw new ArcGISError("geometry numbers must be finite.", "bad_argument");
+		if (g.length === 2) [geometry, geometryType] = [{ x: g[0], y: g[1] }, "esriGeometryPoint"];
+		else if (g.length === 4) {
+			[geometry, geometryType] = [{ xmin: Math.min(g[0], g[2]), ymin: Math.min(g[1], g[3]), xmax: Math.max(g[0], g[2]),
+				ymax: Math.max(g[1], g[3]) }, "esriGeometryEnvelope"];
+		} else geometry = {};
+	} else {
+		geometry = g;
+		geometryType = g.rings ? "esriGeometryPolygon" : g.paths ? "esriGeometryPolyline" : g.points ? "esriGeometryMultipoint"
+			: "xmin" in g ? "esriGeometryEnvelope" : "x" in g && "y" in g ? "esriGeometryPoint" : null;
+	}
+	if (!geometryType) {
+		throw new ArcGISError("geometry must be a point [x, y], a box [xmin, ymin, xmax, ymax], or Esri geometry JSON "
+			+ "(x/y, rings, paths, points or xmin/ymin/xmax/ymax).", "bad_argument");
+	}
+	const rel = SPATIAL_RELS[args.spatial_rel ?? "intersects"];
+	if (!rel) throw new ArcGISError(`spatial_rel must be ${Object.keys(SPATIAL_RELS).join(" | ")}.`, "bad_argument");
+	const sr = (geometry.spatialReference as any)?.wkid ?? (geometry.spatialReference as any)?.latestWkid ?? args.geometry_sr ?? 4326;
+	const out: Record<string, unknown> = { geometry, geometryType, inSR: sr, spatialRel: rel };
+	if (args.distance !== undefined) {
+		if (!(args.distance > 0)) throw new ArcGISError("distance must be greater than 0.", "bad_argument");
+		const units = DISTANCE_UNITS[args.units ?? "meters"];
+		if (!units) throw new ArcGISError(`units must be ${Object.keys(DISTANCE_UNITS).join(" | ")}.`, "bad_argument");
+		Object.assign(out, { distance: args.distance, units });
+	}
+	return out;
+}
+
+/** What a spatial filter did, in the answer. */
+function spatialNote(sp: Record<string, unknown>, args: SpatialArgs) {
+	if (!sp.geometryType) return {};
+	return { spatial: { geometry: String(sp.geometryType).replace("esriGeometry", "").toLowerCase(), relation: args.spatial_rel ?? "intersects",
+		sr: sp.inSR, ...(sp.distance ? { within: `${sp.distance} ${args.units ?? "meters"}` } : {}) } };
+}
 
 export function parseStats(stats: (string | Record<string, unknown>)[]): Record<string, unknown>[] {
 	const kinds: Record<string, string> = { avg: "avg", mean: "avg", sum: "sum", min: "min", max: "max", count: "count",
@@ -122,6 +189,7 @@ function describeFields(fields: any[] = []) {
 
 export async function layerQuery(ctx: Ctx, args: LayerQueryArgs) {
 	const action = args.action ?? "query";
+	const sp = spatialFilter(args); // checked before any request
 	const url = await resolveLayerUrl(ctx, args.target, args.layer ?? 0);
 	const where = args.where?.trim() || "1=1";
 	if (action === "describe") {
@@ -141,18 +209,18 @@ export async function layerQuery(ctx: Ctx, args: LayerQueryArgs) {
 	if (action === "attachments") return attachments(ctx, url, args);
 	if (action === "related") return related(ctx, url, args);
 	if (action === "count") {
-		const res = await ctx.request(`${url}/query`, { where, returnCountOnly: true });
-		return { where, count: res.count ?? null };
+		const res = await ctx.request(`${url}/query`, { where, ...sp, returnCountOnly: true });
+		return { where, ...spatialNote(sp, args), count: res.count ?? null };
 	}
 	if (action === "stats") {
 		if (!args.stats?.length) {
 			throw new ArcGISError('stats is required, e.g. ["sum:POP", "avg:INCOME", "count:OBJECTID"].', "bad_argument");
 		}
 		const res = await ctx.request(`${url}/query`, {
-			where, outStatistics: parseStats(args.stats), groupByFieldsForStatistics: args.group_by,
+			where, ...sp, outStatistics: parseStats(args.stats), groupByFieldsForStatistics: args.group_by,
 			orderByFields: args.order_by, returnGeometry: false,
 		});
-		return { where, group_by: args.group_by ?? null, rows: rowsFrom((res.features ?? []).slice(0, MAX_ROWS), [], false) };
+		return { where, ...spatialNote(sp, args), group_by: args.group_by ?? null, rows: rowsFrom((res.features ?? []).slice(0, MAX_ROWS), [], false) };
 	}
 	if (action !== "query") {
 		throw new ArcGISError("action must be describe | query | count | stats | attachments | related.", "bad_action");
@@ -160,14 +228,14 @@ export async function layerQuery(ctx: Ctx, args: LayerQueryArgs) {
 	const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 50), MAX_ROWS));
 	const offset = Math.max(0, Math.trunc(args.offset ?? 0));
 	const res = await ctx.request(`${url}/query`, {
-		where, outFields: args.fields?.length ? args.fields.join(",") : "*", returnGeometry: Boolean(args.return_geometry),
-		resultOffset: offset, resultRecordCount: limit, orderByFields: args.order_by,
+		where, ...sp, outFields: args.fields?.length ? args.fields.join(",") : "*", returnGeometry: Boolean(args.return_geometry),
+		outSR: args.return_geometry ? args.out_sr : undefined, resultOffset: offset, resultRecordCount: limit, orderByFields: args.order_by,
 	});
 	const rows = rowsFrom(res.features ?? [], res.fields, Boolean(args.return_geometry));
 	const more = rows.length >= limit || Boolean(res.exceededTransferLimit);
 	const hasDates = (res.fields ?? []).some((f: any) => f.type === "esriFieldTypeDate");
 	return {
-		where, count: rows.length, offset, next_offset: more ? offset + rows.length : null, rows,
+		where, ...spatialNote(sp, args), count: rows.length, offset, next_offset: more ? offset + rows.length : null, rows,
 		dates: hasDates ? "ISO 8601 UTC (stored as epoch ms)" : null,
 	};
 }
