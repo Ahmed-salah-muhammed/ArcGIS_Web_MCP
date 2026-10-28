@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoWidgets, layoutFor } from "../../src/tools/portal_app/dashboard";
+import { autoWidgets, layoutFor, widgetFilter } from "../../src/tools/portal_app/dashboard";
 import { formFor, inputFor } from "../../src/tools/portal_app/fieldmaps";
 import { app } from "../../src/tools/portal_app/handler";
 import { templateName } from "../../src/tools/portal_app/instant";
@@ -125,6 +125,106 @@ describe("portal_app: Dashboards", () => {
 		expect(sent(calls, "/addItem")).toHaveLength(0);
 		const layout = layoutFor([{ ids: ["a", "b"], width: 1 }, { ids: [], width: 1 }]);
 		expect(layout.rootElement.elements).toHaveLength(1);
+	});
+});
+
+describe("portal_app: interactive dashboards", () => {
+	const layer = { name: "users", objectIdField: "OBJECTID", displayField: "NAME", fields: [
+		{ name: "OBJECTID", type: "esriFieldTypeOID" }, { name: "NAME", type: "esriFieldTypeString" },
+		{ name: "Role", type: "esriFieldTypeString" },
+		{ name: "STATUS", type: "esriFieldTypeString", domain: { codedValues: [{ code: "O", name: "Open" }, { code: "C", name: "Closed" }] } },
+		{ name: "COST", type: "esriFieldTypeDouble" }, { name: "JoinDate", type: "esriFieldTypeDate" }] };
+	const routes = () => ({ ...common({
+		[`/content/items/${ID}`]: () => ({ id: ID, type: "Feature Service", url: SVC }),
+		[SVC]: () => ({ layers: [{ id: 0, name: "users" }] }),
+		[`${SVC}/0`]: () => layer,
+		[`${SVC}/0/query`]: () => ({ features: [{ attributes: { Role: "owner", n: 5 } }, { attributes: { Role: "user", n: 9 } }] }),
+	}), [`/content/items/${MAP}/data`]: () => ({ operationalLayers: [{ id: "op-users", title: "Users", url: `${SVC}/0/` }] }) });
+	const build = async (args: Record<string, unknown>) => {
+		silence();
+		const { ctx, calls } = fakeCtx(routes());
+		const out: any = await app(ctx, { kind: "dashboard", ...args } as any);
+		const data = json(sent(calls, "/addItem")[0].params.text);
+		const byName = (name: string) => data.desktopView.widgets.find((w: any) => w.name === name);
+		return { out, data, byName, widgets: data.desktopView.widgets as any[] };
+	};
+
+	it("selections filter the other widgets and the map, zoom to it; the map filters back", async () => {
+		const { out, widgets, byName } = await build({ target: ID, webmap_id: MAP, widgets: [{ type: "map" },
+			{ type: "indicator", title: "All" }, { type: "pie", field: "Role", title: "By role" }, { type: "table" }] });
+		const [map, indicator, pie, table] = widgets;
+		expect(byName("By role")).toBe(pie);
+		const [filter, zoom] = pie.events[0].actions;
+		expect(pie.events[0].type).toBe("selectionChanged");
+		expect(filter.targets).toEqual([
+			{ targetId: `${indicator.id}#main`, by: "whereClause", requiresSelection: false },
+			{ targetId: `${table.id}#main`, by: "whereClause", requiresSelection: false },
+			{ targetId: `${map.id}#op-users`, by: "whereClause", requiresSelection: false }]);
+		expect(zoom).toEqual({ type: "zoom", targets: [{ targetId: map.id, by: "geometry", requiresSelection: false }] });
+		expect(table.events[0].actions[0].targets.map((t: any) => t.targetId)).toContain(`${pie.id}#main`);
+		expect(indicator.events).toBeUndefined();
+		expect(map.events[0]).toMatchObject({ type: "extentChanged", actions: [{ type: "filter",
+			targets: [indicator, pie, table].map((w) => ({ targetId: `${w.id}#main`, by: "geometry", requiresSelection: false })) }] });
+		expect(map.layers[0]).toMatchObject({ dataSource: { type: "layerDataSource", itemId: MAP, layerId: "op-users" },
+			events: [{ type: "selectionChanged" }] });
+		expect(map.selectTool.clickToSelect).toBe(true);
+		expect(out.interactive).toMatchObject({ selecting_filters_others: ["By role", "Table"], map_extent_filters: true,
+			map_selection_filters: true });
+	});
+
+	it("interactive=false and extent_filter=false turn the wiring off", async () => {
+		const off = await build({ target: ID, webmap_id: MAP, interactive: false, widgets: [{ type: "map" }, { type: "pie", field: "Role" }] });
+		expect(JSON.stringify(off.widgets)).not.toContain('"events"');
+		expect(off.out.interactive).toBe(false);
+		const still = await build({ target: ID, webmap_id: MAP, extent_filter: false, widgets: [{ type: "map" }, { type: "pie", field: "Role" }] });
+		expect(still.widgets[0].events).toBeUndefined();
+		expect(still.widgets[1].events).toBeDefined();
+	});
+
+	it("widget filters: equal / is_in on text fields, coded values by their description", () => {
+		expect(widgetFilter(layer, { Role: "owner" })).toEqual({ type: "filterGroup", condition: "OR", rules: [{ type: "filterGroup",
+			condition: "AND", rules: [{ type: "filterRule", field: { name: "Role", type: "string" }, operator: "equal",
+				constraint: { type: "value", value: "owner" } }] }] });
+		expect(widgetFilter(layer, { status: ["Open", "C"] })!.rules[0].rules[0]).toMatchObject({ field: { name: "STATUS" },
+			operator: "is_in", constraint: { type: "values", values: ["O", "C"] } });
+		expect(widgetFilter(layer, undefined)).toBeUndefined();
+		expect(() => widgetFilter(layer, { COST: "5" })).toThrow(/not a text field/);
+	});
+
+	it("tabs, columns, colours, date bins, an embedded page and the header", async () => {
+		const { data, byName } = await build({ target: ID, subtitle: "Live", logo_url: "https://x.example/logo.png", widgets: [
+			{ type: "indicator", title: "Owners", filter: { Role: "owner" }, tab: "Owners", color: "#FACC15" },
+			{ type: "indicator", title: "Users", filter: { Role: "user" }, tab: "Users" },
+			{ type: "line", field: "JoinDate", period: "day", title: "Trend", color: "#00bfff" },
+			{ type: "embed", url: "https://experience.arcgis.com/experience/abc", title: "App", tab: "App" },
+			{ type: "pie", field: "Role", column: "left", title: "Pie" }] });
+		const owners = byName("Owners");
+		expect(owners.datasets[0].filter.rules[0].rules[0].constraint).toEqual({ type: "value", value: "owner" });
+		expect(owners.defaultSettings.middleSection.textInfo.fillColor).toBe("#facc15");
+		const trend = byName("Trend");
+		expect(trend).toMatchObject({ parseDates: true, minPeriod: "DD" });
+		expect(trend.chartConfig.series[0]).toMatchObject({ binTemporalData: true, temporalBinning: { size: 1, unit: "days" },
+			lineSymbol: { color: [0, 191, 255, 255] } });
+		expect(trend.chartConfig.axes[0].valueFormat.type).toBe("date");
+		expect(byName("App")).toMatchObject({ type: "embeddedContentWidget", url: "https://experience.arcgis.com/experience/abc" });
+		const [left, center, right] = data.desktopView.layout.rootElement.elements;
+		expect(left.elements[0]).toMatchObject({ type: "tabsLayoutElement", elements: [
+			{ tabName: "Owners", type: "itemLayoutElement", id: owners.id }, { tabName: "Users", id: byName("Users").id }] });
+		expect(left.elements[1]).toMatchObject({ type: "itemLayoutElement", id: byName("Pie").id });
+		expect(center.elements[0]).toMatchObject({ type: "tabsLayoutElement", elements: [{ tabName: "App" }] });
+		expect(right.elements[0].id).toBe(trend.id);
+		expect(data.desktopView.header).toMatchObject({ subtitle: "Live", logoImageURL: "https://x.example/logo.png" });
+	});
+
+	it("checks period, colours, embed and logo links before anything is created", async () => {
+		const { ctx, calls } = fakeCtx(routes());
+		await expect(app(ctx, { kind: "dashboard", target: ID, widgets: [{ type: "bar", field: "Role", period: "day" }] }))
+			.rejects.toThrow(/period needs a date field/);
+		await expect(app(ctx, { kind: "dashboard", target: ID, widgets: [{ type: "indicator", color: "red" }] })).rejects.toThrow(/#rrggbb/);
+		await expect(app(ctx, { kind: "dashboard", target: ID, widgets: [{ type: "embed", url: "http://x.example" }] })).rejects.toThrow(/https/);
+		await expect(app(ctx, { kind: "dashboard", target: ID, logo_url: "javascript:1" })).rejects.toThrow(/logo_url/);
+		expect(sent(calls, "/addItem")).toHaveLength(0);
+		expect(autoWidgets(layer, false).map((w) => `${w.type}:${w.field ?? ""}`)).toContain("line:JoinDate");
 	});
 });
 
