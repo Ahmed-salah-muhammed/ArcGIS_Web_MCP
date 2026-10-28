@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { layerQuery, parseStats, rowsFrom } from "../../src/tools/portal_layer_query/handler";
+import { layerQuery, parseStats, rowsFrom, spatialFilter } from "../../src/tools/portal_layer_query/handler";
 import { iso } from "../../src/tools/shared/format";
 import { fakeCtx, SVC } from "../helpers";
 
@@ -77,5 +77,31 @@ describe("portal_layer_query", () => {
 			groups: [{ object_id: 5, records: [{ TEXT: "ok", WHEN: "2023-11-14T22:13:20Z" }] }] });
 		await expect(layerQuery(ctx, { target: `${SVC}/0`, action: "related", object_ids: [5], relationship_id: 9 }))
 			.rejects.toThrow(/No relationship '9'/);
+	});
+
+	it("spatial filters: point, box and geometry JSON, with a distance", () => {
+		expect(spatialFilter({})).toEqual({});
+		expect(spatialFilter({ geometry: [31.24, 30.04], distance: 2, units: "kilometers" })).toEqual({
+			geometry: { x: 31.24, y: 30.04 }, geometryType: "esriGeometryPoint", inSR: 4326, spatialRel: "esriSpatialRelIntersects",
+			distance: 2, units: "esriSRUnit_Kilometer" });
+		expect(spatialFilter({ geometry: [32, 31, 30, 29] })).toMatchObject({ geometryType: "esriGeometryEnvelope",
+			geometry: { xmin: 30, ymin: 29, xmax: 32, ymax: 31 } });
+		const ring = { rings: [[[0, 0], [1, 0], [1, 1], [0, 0]]], spatialReference: { wkid: 102100 } };
+		expect(spatialFilter({ geometry: ring, spatial_rel: "within", geometry_sr: 4326 })).toMatchObject({
+			geometryType: "esriGeometryPolygon", inSR: 102100, spatialRel: "esriSpatialRelWithin" });
+		expect(() => spatialFilter({ geometry: [1, 2, 3] })).toThrow(/point \[x, y\]/);
+		expect(() => spatialFilter({ geometry: { foo: 1 } })).toThrow(/Esri geometry JSON/);
+		expect(() => spatialFilter({ distance: 5 })).toThrow(/need a geometry/);
+		expect(() => spatialFilter({ geometry: [1, 2], distance: 0 })).toThrow(/greater than 0/);
+	});
+
+	it("count sends the spatial filter and says what it did", async () => {
+		const { ctx, calls } = fakeCtx({ "/FeatureServer/0/query": () => ({ count: 7 }) });
+		const out: any = await layerQuery(ctx, { target: `${SVC}/0`, action: "count", geometry: [31.24, 30.04], distance: 500 });
+		expect(calls[0].params).toMatchObject({ geometryType: "esriGeometryPoint", distance: 500, units: "esriSRUnit_Meter",
+			returnCountOnly: true });
+		expect(out).toEqual({ where: "1=1", spatial: { geometry: "point", relation: "intersects", sr: 4326, within: "500 meters" }, count: 7 });
+		await expect(layerQuery(ctx, { target: `${SVC}/0`, action: "count", geometry: [1] })).rejects.toMatchObject({ code: "bad_argument" });
+		expect(calls).toHaveLength(1);
 	});
 });

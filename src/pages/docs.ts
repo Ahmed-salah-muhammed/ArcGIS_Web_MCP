@@ -113,7 +113,9 @@ export const TOOL_DOCS: ToolDoc[] = [
 			{ name: "attachments", does: "Each feature's files: names, types, sizes, links" },
 			{ name: "related", does: "Records related through a relationship" },
 		],
-		examples: ["What fields does the Parcels layer have?", "Total population by district."],
+		examples: ["What fields does the Parcels layer have?", "Total population by district.",
+			"How many schools are within 2 km of 31.24, 30.04?"],
+		notes: ["query, count and stats also filter by place: a point, a box or any geometry, optionally within a distance of it."],
 	},
 	{
 		name: "portal_layer_edit", category: "data",
