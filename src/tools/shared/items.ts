@@ -34,12 +34,18 @@ export function deleteItem(ctx: Ctx, id: string, owner?: string) {
 	return ctx.request(`${userPath(ctx, owner)}/items/${requireId(id)}/delete`);
 }
 
-/** "config/config.json" -> resourcesPrefix "config" + fileName "config.json". */
+/**
+ * "config/config.json" -> resourcesPrefix "config" + fileName "config.json", sent as a file. Measured: ArcGIS
+ * sanitizes a resource sent as `text` like HTML (<exp> tags and style values go, the JSON can break), which left an
+ * Experience Builder app the builder could not open; a file upload, the way the apps save themselves, is kept as is.
+ */
 export function addResource(ctx: Ctx, id: string, path: string, text: string, access?: "private" | "inherit") {
 	const slash = path.lastIndexOf("/");
-	return ctx.request(`${userPath(ctx)}/items/${requireId(id)}/addResources`, {
-		resourcesPrefix: slash > 0 ? path.slice(0, slash) : undefined, fileName: path.slice(slash + 1), text, access,
-	});
+	const fileName = path.slice(slash + 1);
+	const url = `${userPath(ctx)}/items/${requireId(id)}/addResources`;
+	const params = { resourcesPrefix: slash > 0 ? path.slice(0, slash) : undefined, fileName, access };
+	if (!ctx.upload) return ctx.request(url, { ...params, text });
+	return ctx.upload(url, params, { name: fileName, content: text, type: fileName.endsWith(".json") ? "application/json" : "text/plain" });
 }
 
 export function addRelationship(ctx: Ctx, originItemId: string, destinationItemId: string, relationshipType: string) {
