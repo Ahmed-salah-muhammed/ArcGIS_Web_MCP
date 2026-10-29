@@ -237,6 +237,7 @@ export const TOOL_DOCS: ToolDoc[] = [
 		inputs: [
 			{ name: "path", does: "Relative to your portal's sharing/rest, or a full URL on your portal or its services" },
 			{ name: "method", does: "GET (cannot change anything) or POST", confirm: "for POSTs that change things" },
+			{ name: "file", does: "With a POST: a file sent as multipart, e.g. an item resource (ArcGIS sanitizes resources sent as text)" },
 		],
 		examples: ["Show my organization's helper services."],
 	},

@@ -36,6 +36,7 @@ export class ArcGISError extends Error {
 		message: string,
 		readonly code: string,
 		readonly status?: number,
+		readonly body?: string, // the response itself when it was not JSON (a file, a page)
 	) {
 		super(message);
 		this.name = "ArcGISError";
@@ -172,7 +173,7 @@ async function parseArcGIS(res: Response): Promise<any> {
 	try {
 		body = JSON.parse(text);
 	} catch {
-		throw new ArcGISError(`Not a JSON response (HTTP ${res.status}).`, res.ok ? "not_json" : "http_error", res.status);
+		throw new ArcGISError(`Not a JSON response (HTTP ${res.status}).`, res.ok ? "not_json" : "http_error", res.status, text);
 	}
 	if (body && typeof body === "object" && body.error) {
 		const code = Number(body.error.code) || res.status;
