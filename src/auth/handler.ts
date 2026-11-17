@@ -32,7 +32,17 @@ import {
 	validateOAuthState,
 } from "./oauth-utils";
 import { type ContactEnv, handleContact } from "../contact";
-import { AUTHOR, clientDisplay, HOME_HEADERS, homePage, type Message, MESSAGE_HEADERS, messagePage } from "../pages";
+import {
+	AUTHOR,
+	clientDisplay,
+	HOME_CSS,
+	HOME_CSS_HEADERS,
+	HOME_HEADERS,
+	homePage,
+	type Message,
+	MESSAGE_HEADERS,
+	messagePage,
+} from "../pages";
 
 type Bindings = Env & { OAUTH_PROVIDER: OAuthHelpers };
 
@@ -49,6 +59,7 @@ export function portalUrl(env: Pick<Env, "ARCGIS_PORTAL_URL">): string {
 }
 
 app.get("/", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
+app.get("/home.css", () => new Response(HOME_CSS, { headers: HOME_CSS_HEADERS }));
 app.get("/contact", (c) => c.redirect("/#contact"));
 app.post("/contact", (c) => handleContact(c.req.raw, c.env as Bindings & ContactEnv));
 

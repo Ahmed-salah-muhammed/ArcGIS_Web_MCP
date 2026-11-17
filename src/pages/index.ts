@@ -5,6 +5,6 @@
  */
 export { CREDIT_CSS, creditHtml } from "./credit";
 export { CATEGORIES, TOOL_DOCS } from "./docs";
-export { HOME_HEADERS, homePage } from "./home";
+export { HOME_CSS, HOME_CSS_HEADERS, HOME_HEADERS, homePage } from "./home";
 export { AUTHOR, type Author, MCP_INSTRUCTIONS, MCP_SERVER_INFO, VERSION } from "./identity";
 export { clientDisplay, type Message, MESSAGE_HEADERS, messagePage } from "./status";

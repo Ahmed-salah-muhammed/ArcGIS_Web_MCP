@@ -4,9 +4,7 @@ import type { Author } from "./identity";
 export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 	.replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 
-export const FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' "
-	+ "stroke='%23007ac2' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='9.5'/%3E%3Cpath d='M2.5 12h19M12 2.5c2.6 2.7 "
-	+ "3.9 5.9 3.9 9.5s-1.3 6.8-3.9 9.5c-2.6-2.7-3.9-5.9-3.9-9.5S9.4 5.2 12 2.5z'/%3E%3C/svg%3E";
+export const FAVICON = "/brand-logo.png";
 
 function initials(name: string): string {
 	return name.split(/\s+/).map((w) => w.match(/[\p{L}\p{N}]/u)?.[0] ?? "").filter(Boolean).slice(0, 2)

@@ -127,6 +127,9 @@ describe("POST /contact", () => {
 	});
 
 	it("is wired into the Worker: GET goes to the form, POST sends", async () => {
+		const stylesheet = await ArcGISHandler.request(`${SITE}/home.css`, {}, env() as any);
+		expect(stylesheet.status).toBe(200);
+		expect(stylesheet.headers.get("content-type")).toContain("text/css");
 		const get = await ArcGISHandler.request(`${SITE}/contact`, {}, env() as any);
 		expect(get.status).toBe(302);
 		expect(get.headers.get("location")).toBe("/#contact");

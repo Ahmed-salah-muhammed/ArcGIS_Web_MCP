@@ -1,14 +1,15 @@
 /**
  * The documentation app served at "/": a fixed app shell (top bar, sidebar, one panel, "on this page") whose pages
  * switch by URL hash (#overview, #connect, #tools, #t-portal_search, #security, #limits, #contact, #about), so the
- * browser page never scrolls. Everything is inline (no external fonts, scripts or images) for the strict CSP; the
- * contact form posts JSON to /contact on this same origin (src/contact.ts).
+ * browser page never scrolls. The stylesheet is imported from this folder and served by the Worker; the contact form
+ * posts JSON to /contact on this same origin (src/contact.ts).
  */
 import { CONTACT_LIMITS, TOPICS } from "../contact";
 import { APP_ICONS } from "./app-icons";
 import { ARROW, avatarHtml, esc, FAVICON } from "./credit";
 import { CATEGORIES, TOOL_DOCS, type ToolDoc } from "./docs";
 import { type Author, VERSION } from "./identity";
+import HOME_CSS from "./home.css";
 
 const PATHS: Record<string, string> = {
 	home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>',
@@ -40,6 +41,9 @@ const PATHS: Record<string, string> = {
 	clipboard: '<rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 4V2.5h6V4M9 11h6M9 15h6"/>',
 	pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
 	code: '<path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/>',
+	arrows: '<path d="M7 7h11m0 0-3-3m3 3-3 3M17 17H6m0 0 3 3m-3-3 3-3"/>',
+	terminal: '<path d="m4 7 5 5-5 5m8 0h8"/>',
+	sliders: '<path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h9m4 0h3"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="18" r="2"/>',
 	whatsapp: '<path d="M3.5 20.5 5 16a8.5 8.5 0 1 1 3.2 3.1z"/><path d="M9.2 8.6c.2-.5.5-.6.8-.6h.6c.2 0 .4.1.5.4l.7 1.6c.1.3 0 .5-.1.7l-.5.6c.6 1.2 1.6 2.1 2.8 2.7l.6-.5c.2-.2.5-.2.7-.1l1.6.7c.3.1.4.3.4.6v.6c0 .4-.2.7-.6.8-2.6 1-7.3-3.6-6.5-6.5z"/>',
 };
 
@@ -48,8 +52,12 @@ const TOPIC_ICONS: Record<string, string> = {
 	"ArcGIS Enterprise": "server", "Career / Full-Time": "briefcase",
 };
 
-const icon = (name: string, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor"
-  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[name] ?? ""}</svg>`;
+const icon = (name: string, size = 18) => {
+	const path = PATHS[name];
+	if (!path) throw new Error(`Unknown documentation icon: ${name}`);
+	return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor"
+  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+};
 
 const code = (text: string) => `<div class="code"><pre><code>${esc(text)}</code></pre>`
 	+ `<button class="copy" type="button" data-copy="${esc(text)}" title="Copy">${icon("copy", 15)}<span>Copy</span></button></div>`;
@@ -251,11 +259,11 @@ function contact(author: Author | null) {
 	const portfolio = author?.url
 		? `<a class="btn" href="${esc(author.url)}" target="_blank" rel="noopener noreferrer">Portfolio ${ARROW}</a>` : "";
 	const items = email + wa + tip;
-	const topics = TOPICS.map((t) => `<button type="button" class="topic" data-topic="${esc(t)}" aria-pressed="false">`
+	const topics = TOPICS.map((t) => `<button type="button" class="topic" data-topic="${esc(t)}" aria-pressed="${t === "Question about the MCP"}">`
 		+ `${icon(TOPIC_ICONS[t] ?? "chat", 14)}${esc(t)}</button>`).join("");
 	return page("contact", "Contact", "Contact us", `
   <p class="lead">Questions, bug reports or ideas for ArcGIS Web MCP, or GIS and full-stack work: write here and I will
-  answer by email.</p>
+  answer.</p>
   <div class="contact">
     <div class="contact-side">${me}${items}${portfolio}</div>
     <form class="contact-form" id="contact-form" novalidate>
@@ -278,244 +286,50 @@ function contact(author: Author | null) {
 }
 
 function sidebar(byCategory: Map<string, ToolDoc[]>, author: Author | null) {
-	const link = (hash: string, ic: string, label: string) =>
-		`<a class="nav" href="#${hash}" data-nav="${hash}">${icon(ic, 18)}<span>${label}</span></a>`;
-	const groups = CATEGORIES.map((c) => `<details class="navgroup"><summary>${icon(c.icon, 18)}<span>${esc(c.name)}</span>
-    <i class="chev">${icon("chevron", 14)}</i></summary>${(byCategory.get(c.id) ?? []).map((t) =>
-		`<a class="nav sub" href="#t-${t.name}" data-nav="t-${t.name}"><span>${t.name}</span></a>`).join("")}</details>`).join("");
-	const me = author ? `<a class="me" href="#about" data-nav="about">${avatarHtml(author, "me-photo", 34)}
-    <span><b>${esc(author.name)}</b><small>${esc(author.title ?? "Developer")}</small></span></a>` : "";
+	const link = (hash: string, ic: string, label: string, nav = hash) =>
+		`<a class="nav" href="#${hash}" data-nav="${nav}">${icon(ic, 18)}<span>${label}</span></a>`;
+	const toolGroups = [
+		{ id: "read", name: "Find &amp; Read", icon: "search", categories: ["read"] },
+		{ id: "publish", name: "Publish &amp; Edit", icon: "layers", categories: ["data"] },
+		{ id: "apps", name: "Apps &amp; Maps", icon: "grid", categories: ["apps"] },
+		{ id: "power", name: "Power Tools", icon: "bolt", categories: ["content", "power"] },
+	].map((group) => {
+		const tools = group.categories.flatMap((category) => byCategory.get(category) ?? [])
+			.filter((tool) => tool.name !== "portal_survey123");
+		return `<details class="navgroup tool-group" data-group="${group.id}"><summary>${icon(group.icon, 18)}<span>${group.name}</span>
+      <span class="group-count">${tools.length}</span><i class="chev">${icon("chevron", 14)}</i></summary>${tools.map((t) =>
+			`<a class="nav sub" href="#t-${t.name}" data-nav="t-${t.name}"><span>${t.name}</span></a>`).join("")}</details>`;
+	}).join("");
+	const clientOptions: [string, string, string[]][] = [
+		["desktop", "Claude Desktop", ["/client-icons/claude.svg"]],
+		["claude-code", "Claude Code CLI", ["/client-icons/claude.svg"]],
+		["cursor", "Cursor &amp; Windsurf", ["/client-icons/cursor.svg", "/client-icons/windsurf.svg"]],
+		["vscode", "VS Code", ["/client-icons/vscode.png"]],
+	];
+	const clients = clientOptions.map(([tab, name, logos]) => `<a class="nav sub" href="#connect" data-client-tab="${tab}"><span class="client-logos">${logos
+		.map((src) => `<img src="${src}" alt="" width="14" height="14">`).join("")}</span><span>${name}</span></a>`).join("");
+	const appIcons = ["instant", "dashboard", "experience", "storymap", "survey", "fieldmaps"]
+		.map((kind) => `<img src="${APP_ICONS[kind]}" alt="" width="16" height="16">`).join("");
 	return `<aside class="side" id="side">
   <nav>
-    <p class="label">Get started</p>${link("overview", "home", "Overview")}${link("connect", "plug", "Connect")}
-    <p class="label">Tools</p>${link("tools", "grid", "Tools reference")}${link("apps", "sparkle", "Build apps")}${groups}
-    <p class="label">Guides</p>${link("security", "shield", "Security")}${link("limits", "gauge", "Limits")}${link("contact", "mail", "Contact us")}
+    <details class="nav-section" open><summary class="label section-toggle">${icon("sliders", 14)}<span>Get started</span>
+      <i class="chev">${icon("chevron", 14)}</i></summary>
+      ${link("overview", "arrows", "Overview &amp; Architecture")}
+    <details class="navgroup install-group" open><summary data-nav="connect">${icon("terminal", 18)}<span>Install Client</span>
+      <i class="chev">${icon("chevron", 14)}</i></summary>${clients}</details>
+    </details>
+    <p class="label">ArcGIS Online apps</p><a class="nav apps-link" href="#apps" data-nav="apps">
+      <span class="apps-nav-icons">${appIcons}</span><span>Build  Apps</span></a>
+    <p class="label label-counted"><span>Tools reference</span><span class="group-count">${TOOL_DOCS.length}</span></p>${toolGroups}
+    <p class="label">Guides &amp; specs</p>${link("security", "shield", "Security &amp; Permissions")}
+    ${link("limits", "gauge", "Limits")}
   </nav>
-  <div class="side-foot">${me}</div>
+  <footer class="side-foot">
+    ${author ? `<a class="me" href="#about" data-nav="about">${avatarHtml(author, "me-photo", 34)}
+      <span><b>${esc(author.name)}</b><small>${esc(author.title ?? "Developer")}</small></span></a>` : ""}
+  </footer>
 </aside>`;
 }
-
-const CSS = `
-  :root { --bg: #000; --panel: #121212; --card: #1a1a1a; --card-2: #222; --line: #262626; --line-2: #2f2f2f;
-    --text: #f2f2f2; --muted: #a1a1aa; --dim: #71717a; --blue: #3b82f6; --green: #22c55e; --orange: #f59e0b;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; color-scheme: dark; }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body { margin: 0; overflow: hidden; background: var(--bg); color: var(--text); line-height: 1.6;
-    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  a { color: inherit; text-decoration: none; }
-  code { font-family: var(--mono); font-size: .86em; background: var(--card-2); border: 1px solid var(--line-2);
-    padding: .08rem .38rem; border-radius: 6px; color: #e5e7eb; }
-  .app { display: grid; grid-template-rows: 60px minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); height: 100vh; height: 100dvh; }
-  .top { display: flex; align-items: center; gap: 1.25rem; padding: 0 1.5rem; }
-  .brand { display: flex; align-items: center; gap: .6rem; font-weight: 800; font-size: 1.12rem; letter-spacing: -.01em; white-space: nowrap; }
-  .brand .logo { color: var(--blue); display: inline-flex; }
-  .brand em { font-style: normal; color: var(--blue); }
-  .ver { font-size: .7rem; font-weight: 600; color: var(--muted); border: 1px solid var(--line-2); border-radius: 999px; padding: .05rem .5rem; }
-  .top nav { margin-left: auto; display: flex; align-items: center; gap: .5rem; color: var(--muted); font-size: .94rem; }
-  .top nav a { padding: .38rem .75rem; border-radius: 8px; }
-  .top nav a:hover { color: var(--text); }
-  .top nav a.on { color: #fff; background: rgba(59,130,246,.16); }
-  .top nav .btn { margin-left: .6rem; }
-  .btn { display: inline-flex; align-items: center; gap: .45rem; border: 1px solid var(--line-2); background: var(--card);
-    color: var(--text); font: inherit; font-weight: 600; font-size: .9rem; padding: .5rem .95rem; border-radius: 9px; cursor: pointer; }
-  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .btn.primary:hover { filter: brightness(1.1); }
-  .burger { display: none; background: none; border: 0; color: var(--text); cursor: pointer; padding: .25rem; }
-  .body { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 0; }
-  .side { display: flex; flex-direction: column; min-height: 0; padding: .5rem .75rem 1rem 1rem; }
-  .side nav { flex: 1; overflow-y: auto; padding-right: .25rem; scrollbar-width: thin; scrollbar-color: #333 transparent; }
-  .label { margin: 1.4rem .5rem .45rem; font-size: .7rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-  .nav { display: flex; align-items: center; gap: .7rem; padding: .5rem .65rem; border-radius: 9px; color: #d4d4d8;
-    font-size: .93rem; font-weight: 500; }
-  .nav:hover { background: var(--card); color: var(--text); }
-  .nav.on { background: var(--card-2); color: #fff; }
-  .nav.sub { padding: .32rem .65rem .32rem 2.55rem; font-family: var(--mono); font-size: .8rem; color: var(--muted); }
-  .nav.sub.on { color: #fff; background: var(--card); box-shadow: inset 2px 0 0 var(--blue); }
-  details.navgroup summary { list-style: none; display: flex; align-items: center; gap: .7rem; padding: .5rem .65rem;
-    border-radius: 9px; cursor: pointer; color: #d4d4d8; font-size: .93rem; font-weight: 500; }
-  details.navgroup summary::-webkit-details-marker { display: none; }
-  details.navgroup summary:hover { background: var(--card); }
-  details.navgroup .chev { margin-left: auto; display: inline-flex; transition: transform .15s; }
-  details.navgroup:not([open]) .chev { transform: rotate(-90deg); }
-  .side-foot { border-top: 1px solid var(--line); padding-top: .8rem; margin-top: .5rem; }
-  .me { display: flex; align-items: center; gap: .65rem; padding: .45rem .5rem; border-radius: 10px; }
-  .me:hover, .me.on { background: var(--card); }
-  .me-photo { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; flex: none; box-shadow: 0 0 0 2px #333;
-    display: grid; place-items: center; background: linear-gradient(135deg, #007ac2, #35ac46); font-size: .75rem; font-weight: 700; }
-  .me span { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
-  .me b { font-size: .8rem; white-space: nowrap; }
-  .me small { font-size: .72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .main { min-height: 0; padding: 0 1rem 1rem 0; }
-  .panel { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 230px; background: var(--panel);
-    border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
-  .content { overflow-y: auto; padding: 2rem 2.6rem 2rem; scrollbar-width: thin; scrollbar-color: #333 transparent; }
-  .toc { padding: 2.6rem 1.25rem 1rem 0; overflow-y: auto; }
-  .toc p { display: flex; align-items: center; gap: .5rem; margin: 0 0 1rem; font-size: .72rem; font-weight: 800; letter-spacing: .07em;
-    text-transform: uppercase; color: var(--muted); }
-  .toc p svg { color: var(--blue); }
-  .toc a { display: block; padding: .42rem .9rem; font-size: .85rem; color: var(--muted); border-left: 2px solid var(--line-2); }
-  .toc a:hover { color: var(--text); }
-  .toc a.on { color: var(--blue); border-left-color: var(--blue); background: rgba(59,130,246,.08); font-weight: 600; }
-  .eyebrow { margin: 0 0 .35rem; color: var(--blue); font-weight: 800; font-size: .82rem; letter-spacing: .02em; text-transform: uppercase; }
-  h1 { margin: 0 0 .75rem; font-size: clamp(2rem, 3.4vw, 2.85rem); font-weight: 800; font-style: italic; letter-spacing: -.02em; line-height: 1.12; }
-  h1.mono { font-family: var(--mono); font-style: normal; font-size: clamp(1.6rem, 2.8vw, 2.3rem); }
-  h2 { margin: 1.6rem 0 .8rem; font-size: 1.4rem; font-weight: 800; letter-spacing: -.01em; }
-  h3 { margin: 0 0 .3rem; font-size: 1.02rem; font-weight: 700; }
-  .lead { max-width: 760px; margin: 0 0 1.1rem; color: #c4c4cc; font-size: 1.06rem; }
-  p { color: #c4c4cc; }
-  hr { border: 0; border-top: 1px solid var(--line); margin: 1.3rem 0 0; }
-  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-  .endpoint { display: flex; align-items: center; gap: .9rem; max-width: 760px; padding: .55rem .6rem .55rem 1rem;
-    background: var(--card); border: 1px solid var(--line-2); border-radius: 12px; }
-  .endpoint-label { font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
-  .endpoint code { flex: 1; min-width: 0; background: none; border: 0; font-size: .95rem; overflow-x: auto; white-space: nowrap; color: #fff; }
-  .features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
-  .feature { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-    overflow: hidden; transition: border-color .15s, transform .15s; }
-  .feature:hover { border-color: #3f3f46; transform: translateY(-2px); }
-  .feature-art { height: 84px; display: grid; place-items: center; background: #1e1e1e; }
-  .feature-body { padding: .8rem 1rem 1rem; }
-  .feature-body p, .step p, .tile p, .group-head p { margin: 0; font-size: .86rem; color: var(--muted); }
-  .blue { color: var(--blue); } .green { color: var(--green); } .orange { color: var(--orange); }
-  .steps, .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
-  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .step, .tile { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.1rem 1.15rem; }
-  .step { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: .8rem; align-items: start; padding: .85rem 1rem; }
-  .step .step-ic { grid-row: span 2; margin: 0; }
-  .step h3 { margin: 0; font-size: .95rem; }
-  .step-n { position: absolute; top: .7rem; right: .9rem; font-family: var(--mono); font-size: .75rem; color: var(--dim); }
-  .step-ic, .tile-ic { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; margin-bottom: .6rem;
-    background: rgba(59,130,246,.12); color: var(--blue); }
-  .tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1rem; }
-  .tab { border: 1px solid var(--line-2); background: var(--card); color: var(--muted); font: inherit; font-size: .88rem; font-weight: 600;
-    padding: .4rem .85rem; border-radius: 999px; cursor: pointer; }
-  .tab.on { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .tab-panel { max-width: 820px; }
-  .list { margin: .3rem 0 .8rem; padding-left: 1.3rem; color: #c4c4cc; }
-  .list li { margin-bottom: .35rem; }
-  .code { position: relative; margin: .4rem 0 1rem; background: #0b0b0b; border: 1px solid var(--line-2); border-radius: 12px; }
-  .code pre { margin: 0; padding: .9rem 6rem .9rem 1rem; overflow-x: auto; }
-  .code code { background: none; border: 0; padding: 0; font-size: .86rem; color: #e5e7eb; }
-  .copy { position: absolute; top: .5rem; right: .5rem; display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--line-2);
-    background: var(--card-2); color: var(--muted); font: inherit; font-size: .78rem; font-weight: 600; padding: .3rem .6rem;
-    border-radius: 7px; cursor: pointer; }
-  .copy:hover { color: #fff; }
-  .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .7rem; margin-bottom: .9rem; }
-  .stat { display: flex; align-items: center; gap: .55rem; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: .6rem .85rem; }
-  .stat strong { font-size: 1.35rem; line-height: 1; }
-  .stat > span:last-child { font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); line-height: 1.2; }
-  .filter { display: flex; align-items: center; gap: .55rem; max-width: 420px; margin: 0 0 .9rem; padding: .5rem .8rem;
-    background: var(--card); border: 1px solid var(--line-2); border-radius: 10px; color: var(--muted); }
-  .filter input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--text); font: inherit; font-size: .9rem; }
-  kbd { font-family: var(--mono); font-size: .72rem; border: 1px solid var(--line-2); border-radius: 5px; padding: 0 .35rem; }
-  .groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; align-items: start; }
-  .group { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: .9rem 1rem; }
-  .group-head { display: flex; align-items: flex-start; gap: .75rem; padding-bottom: .75rem; margin-bottom: .75rem; border-bottom: 1px solid var(--line); }
-  .group-head p { font-size: .8rem; }
-  .group-ic { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: #0f172a; flex: none; }
-  .group-head h3 { display: flex; align-items: center; gap: .45rem; font-size: 1rem; }
-  .tag { font-family: var(--mono); font-size: .72rem; font-weight: 600; color: var(--muted); background: var(--card-2);
-    border: 1px solid var(--line-2); border-radius: 6px; padding: .02rem .4rem; }
-  .group-meta { margin-left: auto; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: .2rem; }
-  .group-meta span { font-size: .66rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--dim); }
-  .group-meta b { font-size: .8rem; background: var(--card-2); border: 1px solid var(--line-2); border-radius: 7px; padding: .1rem .55rem; }
-  .chips { display: grid; grid-template-columns: minmax(0, 1fr); gap: .45rem; }
-  .chip { display: flex; align-items: center; gap: .6rem; padding: .42rem .75rem; border: 1px solid var(--line-2); border-radius: 10px;
-    background: #161616; font-family: var(--mono); font-size: .82rem; color: #e4e4e7; }
-  .chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); flex: none; }
-  .chip:hover { border-color: var(--blue); } .chip:hover i { background: var(--blue); }
-  .table { width: 100%; max-width: 900px; border-collapse: collapse; font-size: .9rem; background: var(--card);
-    border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .table th { text-align: left; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
-    background: #1e1e1e; padding: .6rem .85rem; }
-  .table td { padding: .6rem .85rem; border-top: 1px solid var(--line); color: #d4d4d8; vertical-align: top; }
-  .badge { display: inline-block; font-size: .72rem; font-weight: 700; padding: .08rem .5rem; border-radius: 999px;
-    border: 1px solid var(--line-2); color: var(--dim); white-space: nowrap; }
-  .badge.warn { color: #fbbf24; border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.08); }
-  .prompts { display: grid; gap: .55rem; max-width: 820px; }
-  .prompt { display: flex; align-items: flex-start; gap: .65rem; padding: .7rem .9rem; background: var(--card);
-    border: 1px solid var(--line); border-radius: 11px; color: #e4e4e7; }
-  .prompt svg { color: var(--blue); flex: none; margin-top: .2rem; }
-  .person { display: flex; align-items: center; gap: 1.6rem; padding: 1.4rem; max-width: 760px; background: var(--card);
-    border: 1px solid var(--line); border-radius: 18px; }
-  .person h2 { margin: 0 0 .1rem; }
-  .person-photo { width: 112px; height: 112px; border-radius: 50%; object-fit: cover; flex: none; box-shadow: 0 0 0 3px #2a2a2a;
-    display: grid; place-items: center; font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, #007ac2, #35ac46); }
-  .person-role { margin: 0 0 .5rem; color: var(--blue); font-weight: 600; }
-  .apps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .9rem; }
-  .app-card { display: flex; flex-direction: column; gap: .6rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1rem; }
-  .app-head { display: flex; align-items: center; gap: .7rem; } .app-head .tile-ic { margin: 0; flex: none; }
-  .app-head h3 { margin: 0; font-size: .98rem; } .app-head code { font-size: .74rem; }
-  .app-logo { position: relative; flex: none; width: 40px; height: 40px; } .app-logo img { display: block; width: 40px; height: 40px; }
-  .app-logo i { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 18px; height: 18px;
-    border-radius: 50%; background: #0b0b0b; border: 1px solid var(--line-2); color: #fff; }
-  .app-card > p { margin: 0; font-size: .86rem; color: var(--muted); flex: 1; }
-  .app-card .prompt { padding: .5rem .7rem; font-size: .82rem; background: #161616; }
-  a.inline { color: var(--blue); font-weight: 600; }
-  .contact { display: grid; grid-template-columns: minmax(0, 370px) minmax(0, 1fr); gap: 1rem; align-items: start; max-width: 1060px; }
-  .contact-side, .contact-form { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 1.15rem 1.25rem; }
-  .contact-side { display: grid; gap: 1rem; justify-items: start; }
-  .contact-me { display: flex; align-items: center; gap: .8rem; width: 100%; padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
-  .contact-me .me-photo { width: 52px; height: 52px; }
-  .contact-me b { display: block; font-size: .95rem; } .contact-me small { color: var(--muted); font-size: .8rem; }
-  .contact-item { display: flex; align-items: flex-start; gap: .8rem; min-width: 0; } .contact-item .tile-ic { margin: 0; flex: none; }
-  .contact-item.link { align-items: center; } .contact-item small { display: block; font-size: .78rem; color: var(--muted); }
-  .contact-item.link b { overflow-wrap: anywhere; } .contact-item.link:hover b { color: var(--blue); }
-  .whatsapp { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem .75rem; width: 100%; padding: .75rem .8rem; border-radius: 12px;
-    border: 1px solid rgba(34,197,94,.35); background: rgba(34,197,94,.07); }
-  .whatsapp:hover { border-color: var(--green); }
-  .wa-ic { display: inline-grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 10px;
-    background: rgba(34,197,94,.15); color: var(--green); }
-  .whatsapp div { min-width: 0; } .whatsapp b { display: block; font-size: .9rem; white-space: nowrap; }
-  .whatsapp small { display: block; font-size: .8rem; color: var(--muted); white-space: nowrap; }
-  .wa-go { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: .3rem; font-size: .78rem; font-weight: 700;
-    color: var(--green); border: 1px solid rgba(34,197,94,.35); border-radius: 999px; padding: .25rem .65rem; white-space: nowrap; }
-  .contact-item b { font-size: .9rem; } .contact-item p { margin: .1rem 0 0; font-size: .83rem; color: var(--muted); line-height: 1.5; }
-  .contact-form h2 { margin: 0 0 .15rem; font-size: 1.3rem; }
-  .contact-form > p { margin: 0 0 .9rem; color: var(--muted); font-size: .9rem; }
-  .contact-form .field-label { margin: 0 0 .45rem; font-size: .82rem; font-weight: 600; color: #d4d4d8; }
-  .topics { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: 1rem; }
-  .topic { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line-2); background: #161616; color: #e4e4e7;
-    font: inherit; font-size: .8rem; font-weight: 600; padding: .32rem .68rem; border-radius: 8px; cursor: pointer; }
-  .topic:hover { border-color: #3f3f46; }
-  .topic[aria-pressed="true"] { border-color: var(--blue); background: rgba(59,130,246,.15); color: #fff; }
-  .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
-  .fields .wide { grid-column: 1 / -1; }
-  .fields input, .fields textarea { display: block; width: 100%; background: #0f0f0f; border: 1px solid var(--line-2); border-radius: 10px;
-    color: var(--text); font: inherit; font-size: .92rem; padding: .68rem .85rem; outline: 0; }
-  .fields input:focus, .fields textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,.18); }
-  .fields textarea { resize: vertical; min-height: 120px; max-height: 320px; }
-  .count { display: block; text-align: right; font-size: .74rem; color: var(--dim); margin-top: .25rem; }
-  .send-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: .35rem; }
-  .form-status { margin: 0; font-size: .88rem; } .form-status.good { color: var(--green); } .form-status.bad { color: #f87171; }
-  .btn:disabled { opacity: .6; cursor: progress; }
-  @media (max-width: 1180px) { .panel { grid-template-columns: minmax(0, 1fr); } .toc { display: none; }
-    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .groups, .apps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .contact { grid-template-columns: minmax(0, 1fr); max-width: 760px; } }
-  @media (max-width: 900px) {
-    .top nav a { display: none; } .burger { display: inline-flex; } .body { grid-template-columns: minmax(0, 1fr); }
-    .top { gap: .7rem; padding: 0 1rem; } .top nav .btn { margin-left: 0; padding: .5rem .6rem; } .top nav .btn span { display: none; }
-    .side { position: fixed; z-index: 10; top: 60px; bottom: 0; left: 0; width: 280px; background: #0a0a0a; border-right: 1px solid var(--line);
-      transform: translateX(-100%); transition: transform .2s; }
-    .side.open { transform: none; box-shadow: 0 0 0 100vmax rgba(0,0,0,.55); }
-    .main { padding: 0 .6rem .6rem; } .content { padding: 1.6rem 1.25rem 2rem; }
-    .steps { grid-template-columns: minmax(0, 1fr); } }
-  @media (max-width: 640px) {
-    .main { padding: 0 .5rem .5rem; } .content { padding: 1.4rem 1rem 2rem; } .lead { font-size: 1rem; }
-    .features, .tiles, .groups, .fields, .apps { grid-template-columns: minmax(0, 1fr); } .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .person { flex-direction: column; align-items: flex-start; padding: 1.1rem; }
-    .endpoint { display: grid; grid-template-columns: minmax(0, 1fr); gap: .45rem; padding: .8rem; }
-    .endpoint code { white-space: normal; word-break: break-all; padding: 0; } .endpoint .btn { justify-content: center; }
-    .code pre { padding: 2.7rem 1rem .9rem; }
-    .table thead { display: none; } .table, .table tbody { display: block; }
-    .table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .35rem .75rem; padding: .7rem .85rem; border-top: 1px solid var(--line); }
-    .table tr:first-child { border-top: 0; } .table td { padding: 0; border: 0; }
-    .table td:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
-    .contact-side, .contact-form { padding: 1rem; } }
-  @media (max-width: 420px) {
-    .ver, .group-meta { display: none; } .brand { font-size: 1rem; } .top { gap: .5rem; padding: 0 .75rem; } }
-`;
 
 const SCRIPT = `
 (() => {
@@ -523,7 +337,25 @@ const SCRIPT = `
   const content = document.getElementById("content");
   const toc = document.getElementById("toc-links");
   const side = document.getElementById("side");
+  const breadcrumb = document.getElementById("breadcrumb");
+  const copyPage = document.getElementById("copy-page");
+  const searchOverlay = document.getElementById("search-overlay");
+  const searchInput = document.getElementById("search-input");
+  const searchResults = document.getElementById("search-results");
+  const searchOpen = document.getElementById("search-open");
+  const searchItems = pages.map((p) => ({
+    id: p.id.slice(2),
+    title: p.dataset.title,
+    section: p.querySelector(".eyebrow")?.textContent.trim() || "Documentation",
+    terms: p.textContent.toLowerCase()
+  }));
   let heads = [];
+  function addCrumb(text, className) {
+    const item = document.createElement("span");
+    item.className = className;
+    item.textContent = text;
+    breadcrumb.append(item);
+  }
   function show() {
     const id = decodeURIComponent(location.hash.slice(1)) || "overview";
     const page = document.getElementById("p-" + id) || document.getElementById("p-overview");
@@ -537,18 +369,79 @@ const SCRIPT = `
     heads = [page.querySelector("h1"), ...page.querySelectorAll("h2[id]:not(.sr)")];
     toc.innerHTML = heads.map((h, i) => '<a href="#' + current + '" data-head="' + i + '"' + (i ? "" : ' class="on"') + ">"
       + h.textContent.trim() + "</a>").join("");
+    breadcrumb.replaceChildren();
+    addCrumb(page.querySelector(".eyebrow")?.textContent.trim() || "Documentation", "crumb-section");
+    addCrumb("/", "crumb-separator");
+    addCrumb(page.dataset.title, "crumb-current");
+    copyPage.dataset.copy = location.href;
     document.title = page.dataset.title + " | ArcGIS Web MCP";
     content.scrollTop = 0;
     side.classList.remove("open");
   }
+  function renderSearch() {
+    const query = searchInput.value.trim().toLowerCase();
+    const matches = searchItems.filter((item) => !query || (item.title + " " + item.section + " " + item.terms).includes(query)).slice(0, 8);
+    searchResults.replaceChildren();
+    if (!matches.length) {
+      const empty = document.createElement("p");
+      empty.className = "search-empty";
+      empty.textContent = "No documentation pages found.";
+      searchResults.append(empty);
+      return;
+    }
+    matches.forEach((item) => {
+      const link = document.createElement("a");
+      link.className = "search-result";
+      link.setAttribute("role", "option");
+      link.href = "#" + item.id;
+      const title = document.createElement("span");
+      title.textContent = item.title;
+      const section = document.createElement("small");
+      section.textContent = item.section;
+      link.append(title, section);
+      searchResults.append(link);
+    });
+  }
+  function openSearch() {
+    searchOverlay.hidden = false;
+    searchInput.value = "";
+    renderSearch();
+    searchInput.focus();
+  }
+  function closeSearch() {
+    if (searchOverlay.hidden) return;
+    searchOverlay.hidden = true;
+    searchOpen.focus();
+  }
+  searchOpen.addEventListener("click", openSearch);
+  searchInput.addEventListener("input", renderSearch);
+  searchResults.addEventListener("click", (e) => {
+    if (e.target.closest("a")) closeSearch();
+  });
+  searchOverlay.addEventListener("click", (e) => {
+    if (e.target.closest("[data-search-close]")) closeSearch();
+  });
   toc.addEventListener("click", (e) => {
     const a = e.target.closest("a[data-head]"); if (!a) return;
-    e.preventDefault(); heads[+a.dataset.head].scrollIntoView({ behavior: "smooth", block: "start" });
+    e.preventDefault();
+    const head = heads[+a.dataset.head];
+    content.scrollTo({
+      top: content.scrollTop + head.getBoundingClientRect().top - content.getBoundingClientRect().top,
+      behavior: "smooth"
+    });
   });
   content.addEventListener("scroll", () => {
     let on = 0;
     heads.forEach((h, i) => { if (h.getBoundingClientRect().top - content.getBoundingClientRect().top < 120) on = i; });
     toc.querySelectorAll("a").forEach((a, i) => a.classList.toggle("on", i === on));
+  });
+  side.addEventListener("click", (e) => {
+    const link = e.target.closest("[data-client-tab]");
+    if (!link) return;
+    const page = document.getElementById("p-connect");
+    const tab = page.querySelector('[data-tab="' + link.dataset.clientTab + '"]');
+    page.querySelectorAll(".tab").forEach((item) => item.classList.toggle("on", item === tab));
+    page.querySelectorAll(".tab-panel").forEach((item) => { item.hidden = item.dataset.panel !== link.dataset.clientTab; });
   });
   document.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-copy]"); if (!b) return;
@@ -572,6 +465,8 @@ const SCRIPT = `
     });
   });
   document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openSearch(); return; }
+    if (e.key === "Escape") { closeSearch(); side.classList.remove("open"); }
     if (e.key === "/" && document.activeElement !== filter && !document.getElementById("p-tools").hidden) { e.preventDefault(); filter.focus(); }
   });
   const form = document.getElementById("contact-form");
@@ -600,7 +495,7 @@ const SCRIPT = `
         const res = await fetch("/contact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         const out = await res.json().catch(() => ({}));
         if (res.ok && out.ok) {
-          form.reset(); topics.forEach((x) => x.setAttribute("aria-pressed", "false")); count.textContent = "0 / " + max;
+          form.reset(); topics.forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.topic === "Question about the MCP"))); count.textContent = "0 / " + max;
           say("Thanks! Your message is on its way; I will reply by email.", "good");
         } else {
           say(out.error || "The message could not be sent. Please try again later.", "bad");
@@ -612,7 +507,6 @@ const SCRIPT = `
   }
   document.getElementById("burger").addEventListener("click", (e) => { e.stopPropagation(); side.classList.toggle("open"); });
   document.querySelector(".main").addEventListener("click", () => side.classList.remove("open"));
-  addEventListener("keydown", (e) => { if (e.key === "Escape") side.classList.remove("open"); });
   addEventListener("hashchange", show);
   show();
 })();
@@ -631,27 +525,31 @@ export function homePage(origin: string, author: Author | null): string {
 <title>ArcGIS Web MCP</title>
 <meta name="description" content="A remote MCP server for ArcGIS Online and ArcGIS Enterprise: sign in with your own ArcGIS account and work with your content from Claude or any MCP client.">
 <link rel="icon" href="${FAVICON}">
-<style>${CSS}</style>
+<link rel="stylesheet" href="/home.css?v=${VERSION}&amp;rev=2">
 </head>
 <body>
 <div class="app">
   <header class="top">
     <button class="burger" id="burger" type="button" aria-label="Menu">${icon("menu", 22)}</button>
-    <a class="brand" href="#overview"><span class="logo">${icon("globe", 24)}</span>ArcGIS <em>Web MCP</em></a>
-    <span class="ver">v${VERSION}</span>
-    <nav><a href="#overview" data-nav="overview">Documentation</a><a href="#tools" data-nav="tools">Tools</a>
-      <a href="#connect" data-nav="connect">Connect</a><a href="#contact" data-nav="contact">Contact us</a>
-      <button class="btn primary" type="button" data-copy="${url}" title="Copy server URL" aria-label="Copy server URL">${icon("copy", 15)}<span>Copy server URL</span></button></nav>
+    <a class="brand" href="#overview" aria-label="ArcGIS Web MCP documentation"><span class="logo"><img class="brand-logo" src="/brand-logo.png" alt=""></span><span>ArcGIS <em>Web MCP</em></span></a>
+    <span class="ver">v${VERSION}</span><span class="ver beta">Beta</span>
+    <button class="search-trigger" id="search-open" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="search-overlay">
+      ${icon("search", 16)}<span>Search documentation…</span><kbd>Ctrl K</kbd></button>
+    <nav><a href="${author?.url ? esc(author.url) : "#about"}" ${author?.url ? 'target="_blank" rel="noopener noreferrer"' : 'data-nav="about"'}>Go to Portfolio</a>
+      <a href="#contact" data-nav="contact">Contact us</a><a href="#overview" data-nav="overview">Documentation</a>
+      <button class="btn primary" type="button" data-copy="${url}" title="Copy server URL" aria-label="Copy server URL">${icon("copy", 15)}<span>Copy Server URL</span></button></nav>
   </header>
   <div class="body">
     ${sidebar(byCategory, author)}
     <main class="main">
       <div class="panel">
         <div class="content" id="content">
+          <div class="article-toolbar"><nav class="breadcrumb" id="breadcrumb" aria-label="Breadcrumb"></nav>
+            <button class="copy-page" id="copy-page" type="button" data-copy="" title="Copy page link">${icon("copy", 14)}<span>Copy link</span></button></div>
           ${overview(url, TOOL_DOCS.length)}
           ${connect(url)}
-          ${tools(byCategory)}
           ${apps()}
+          ${tools(byCategory)}
           ${TOOL_DOCS.map(toolPage).join("\n")}
           ${security()}
           ${limits()}
@@ -662,18 +560,35 @@ export function homePage(origin: string, author: Author | null): string {
       </div>
     </main>
   </div>
+  <div class="search-overlay" id="search-overlay" hidden>
+    <div class="search-backdrop" data-search-close></div>
+    <section class="search-dialog" role="dialog" aria-modal="true" aria-labelledby="search-title">
+      <h2 class="sr" id="search-title">Search documentation</h2>
+      <div class="search-input-wrap">${icon("search", 18)}<input id="search-input" type="search" placeholder="Search pages and tools…" autocomplete="off" aria-label="Search pages and tools">
+        <button type="button" data-search-close aria-label="Close search">Esc</button></div>
+      <div class="search-results" id="search-results" role="listbox" aria-label="Search results"></div>
+      <p class="search-footer"><span><kbd>Esc</kbd> to close</span><span>Search documentation and tools</span></p>
+    </section>
+  </div>
 </div>
 <script>${SCRIPT}</script>
 </body>
 </html>`;
 }
 
-/** Headers for the documentation page: no framing, no external loads, only its own inline style and script, and
- * requests only to this origin (the contact form). */
+/** Headers for the documentation page: no framing, only its own stylesheet and inline script, and same-origin requests. */
 export const HOME_HEADERS = {
 	"Content-Type": "text/html; charset=utf-8",
-	"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; "
+	"Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'unsafe-inline'; img-src 'self' data:; "
 		+ "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 	"X-Frame-Options": "DENY",
 	"Referrer-Policy": "no-referrer",
 };
+
+export const HOME_CSS_HEADERS = {
+	"Content-Type": "text/css; charset=utf-8",
+	"Cache-Control": "no-cache",
+	"X-Content-Type-Options": "nosniff",
+};
+
+export { HOME_CSS };

@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "arcgis": {
+      "type": "http",
+      "url": "https://arcgis.web-mcp.workers.dev/mcp"
+    }
+  }
+}

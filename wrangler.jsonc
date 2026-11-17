@@ -22,6 +22,17 @@
 		"nodejs_compat",
 		"global_fetch_strictly_public"
 	],
+	"rules": [
+		{
+			"type": "Text",
+			"globs": ["**/*.css"],
+			"fallthrough": true
+		}
+	],
+	"assets": {
+		"directory": "./public",
+		"not_found_handling": "none"
+	},
 	// The id was written by the first `wrangler deploy` (automatic provisioning); without one, a deploy creates it
 	"kv_namespaces": [
 		{
