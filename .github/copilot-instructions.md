@@ -15,6 +15,15 @@
 - `src/arcgis.ts` owns ArcGIS OAuth and REST request handling. `src/tools/index.ts` registers tool specs; each `src/tools/<tool>/index.ts` defines its schema and metadata, and its handler implements behavior. `src/tools/shared/` provides common request, lookup, safety, and response helpers.
 - `src/pages/` serves the public documentation and identity pages through the Hono fallback. `src/pages/docs.ts` describes tools/actions. Tests in `test/` use Vitest and shared fake contexts from `test/helpers.ts`.
 
+## Experience Builder widget handoff
+
+- `portal_app` with `kind: "exb_widget"` returns a starter file bundle; it does not write to a local Developer Edition installation or implement the user's widget behavior.
+- When continuing an `exb_widget` result or editing `client/your-extensions/widgets/**`, invoke `/arcgis-exb-widget-dev` before implementing the widget. Use the installed skill at `.github/skills/arcgis-exb-widget-dev/`.
+- If the skill is not installed in the active workspace, follow the `install_instructions_url` in `agent_handoff`; if that is unavailable, inspect version-matched samples, implement the runtime/settings and contracts, add focused tests, and run the validation command in the hand-off.
+- Read the actual Developer Edition `client/package.json` and pass its `exb-client.version` as `exb_version`; the MCP's default is only a fallback and cannot detect a local installation.
+- If Developer Edition is outside the active workspace, ask the user to open/add its folder before writing the returned files.
+- Finish Developer Edition widget work by running `npm run tscheck` from its `client/` directory, then verify the widget in Experience Builder.
+
 ## Repository-specific conventions
 
 - Follow the root `AGENTS.md` for detailed setup and operational invariants. In particular, never send an ArcGIS token with raw `fetch`: use `Ctx` methods (`request`, `get`, `upload`, or deliberate `public*` methods). Validate user- or item-supplied service URLs with the existing host allowlist before authenticated requests. ArcGIS may return errors in HTTP 200 bodies, so preserve `src/arcgis.ts` body-based error handling.

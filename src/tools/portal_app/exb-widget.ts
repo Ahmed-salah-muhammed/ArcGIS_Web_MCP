@@ -220,9 +220,30 @@ export function customWidget(args: AppArgs) {
 	if (!args.custom_widget?.name) throw new ArcGISError("custom_widget.name is required (e.g. 'site-list').", "bad_argument");
 	const exb = args.exb_version ?? "1.21.0";
 	const { name, files } = widgetFiles(args.custom_widget, exb);
-	return { widget: name, folder: `client/your-extensions/widgets/${name}`, exb_version: exb, data: args.custom_widget.data ?? "layer",
+	const folder = `client/your-extensions/widgets/${name}`;
+	const versionProvided = args.exb_version !== undefined;
+	return { widget: name, folder, exb_version: exb, data: args.custom_widget.data ?? "layer",
+		agent_handoff: {
+			status: "scaffold_only",
+			skill: "arcgis-exb-widget-dev",
+			invocation: "/arcgis-exb-widget-dev",
+			target: folder,
+			exb_version: exb,
+			version_source: versionProvided ? "provided" : "default",
+			...(versionProvided ? {} : { version_warning: `The MCP cannot inspect your local Developer Edition. Confirm client/package.json's exb-client.version; this scaffold uses the default ${exb}.` }),
+			install_instructions_url: "https://github.com/Ahmed-salah-muhammed/ArcGIS_Web_MCP#installing-the-experience-builder-widget-skill",
+			skill_workspace_path: ".github/skills/arcgis-exb-widget-dev/",
+			next_action: "Write the returned files locally; invoke the skill if installed, otherwise install it or follow fallback_steps.",
+			validation: "Run npm run tscheck from the Developer Edition client/ directory.",
+			fallback_steps: [
+				"Check client/package.json for exb-client.version and inspect nearby widgets plus version-matched SDK samples.",
+				"Implement the runtime, settings, manifest/config, translations, and required map/data/action contracts.",
+				"Add focused tests for the widget's behavior.",
+				"Run npm run tscheck from the Developer Edition client/ directory.",
+				"Run the widget in Experience Builder and verify its configured and runtime states.",
+			],
+		},
 		files, steps: widgetSteps(name),
-		guide: "Esri's widget skill (skills/arcgis-exb-widget-dev in github.com/Esri/arcgis-experience-builder-sdk-resources) covers "
-			+ "message actions, data actions, map tools and tests; an assistant with that skill installed can grow this widget further.",
-		note: "Nothing was created in ArcGIS: write these files into your Developer Edition folder." };
+		guide: "If the skill is installed, invoke /arcgis-exb-widget-dev; otherwise follow agent_handoff.install_instructions_url or agent_handoff.fallback_steps.",
+		note: "This is a scaffold only: nothing was written locally or created in ArcGIS." };
 }

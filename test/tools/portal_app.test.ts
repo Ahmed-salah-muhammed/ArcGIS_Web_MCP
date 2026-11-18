@@ -1042,6 +1042,18 @@ describe("portal_app: custom widgets for Experience Builder Developer Edition", 
 			const out: any = await app(ctx, { kind: "exb_widget", custom_widget: { name: "Site List", data, description: "Lists sites." } } as any);
 			expect(calls).toHaveLength(0);
 			expect(out).toMatchObject({ widget: "site-list", folder: "client/your-extensions/widgets/site-list", exb_version: "1.21.0" });
+			expect(out.agent_handoff).toMatchObject({ status: "scaffold_only", skill: "arcgis-exb-widget-dev",
+				invocation: "/arcgis-exb-widget-dev", target: "client/your-extensions/widgets/site-list", exb_version: "1.21.0",
+				version_source: "default", validation: "Run npm run tscheck from the Developer Edition client/ directory." });
+			expect(out.agent_handoff.install_instructions_url).toBe("https://github.com/Ahmed-salah-muhammed/ArcGIS_Web_MCP#installing-the-experience-builder-widget-skill");
+			expect(out.agent_handoff.skill_workspace_path).toBe(".github/skills/arcgis-exb-widget-dev/");
+			expect(out.agent_handoff.fallback_steps).toEqual(expect.arrayContaining([
+				expect.stringContaining("version-matched SDK samples"),
+				expect.stringContaining("focused tests"),
+				expect.stringContaining("npm run tscheck"),
+			]));
+			expect(out.agent_handoff.version_warning).toContain("client/package.json");
+			expect(out.agent_handoff.next_action).toContain("otherwise install it");
 			expect(Object.keys(out.files).sort()).toEqual(["README.md", "config.json", "icon.svg", "manifest.json", "src/config.ts",
 				"src/runtime/translations/default.ts", "src/runtime/widget.tsx", "src/setting/setting.tsx", "src/setting/translations/default.ts"]);
 			const manifest = JSON.parse(out.files["manifest.json"]);
@@ -1072,6 +1084,9 @@ describe("portal_app: custom widgets for Experience Builder Developer Edition", 
 		await expect(app(ctx, { kind: "exb_widget" } as any)).rejects.toThrow(/custom_widget.name is required/);
 		await expect(app(ctx, { kind: "exb_widget", custom_widget: { name: "9 lives" } } as any)).rejects.toThrow(/starting with a letter/);
 		await expect(app(ctx, { kind: "exb_widget", custom_widget: { name: "x-y" }, exb_version: "latest" } as any)).rejects.toThrow(/exb_version/);
+		const out: any = await app(ctx, { kind: "exb_widget", custom_widget: { name: "site-list" }, exb_version: "1.21.0" } as any);
+		expect(out.agent_handoff).toMatchObject({ exb_version: "1.21.0", version_source: "provided" });
+		expect(out.agent_handoff.version_warning).toBeUndefined();
 	});
 });
 
