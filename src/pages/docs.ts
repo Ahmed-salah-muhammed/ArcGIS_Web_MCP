@@ -14,6 +14,7 @@ export type ToolDoc = {
 	inputs?: ActionDoc[];
 	examples: string[];
 	notes?: string[];
+	relatedPages?: { title: string; id: string }[];
 };
 
 export const CATEGORIES: Category[] = [
@@ -199,7 +200,7 @@ export const TOOL_DOCS: ToolDoc[] = [
 			{ name: "kind=survey", does: "A Survey123 draft that opens in the web designer (portal_survey123 also makes XLSForms for Connect)" },
 			{ name: "kind=fieldmaps", does: "A web map ready for Field Maps: forms from the layers' fields with groups, hints, required and read-only fields, fields shown only when others meet a condition, and a photo element; optional offline" },
 			{ name: "kind=exb_developer", does: "Registers Experience Builder Developer Edition and returns its client ID and setup steps" },
-			{ name: "kind=exb_widget", does: "A custom widget for Experience Builder Developer Edition, in Esri's widget layout (manifest, config, icon, README, runtime and settings components, translations) working with a layer, a map or both, and the steps to run it from client/your-extensions/widgets" },
+			{ name: "kind=exb_widget", does: "A starter scaffold for an Experience Builder Developer Edition widget; returns files and an arcgis-exb-widget-dev hand-off, but writes nothing locally or in ArcGIS. Install the skill from the README instructions, or inspect matching SDK samples, add focused tests, and run npm run tscheck from client/" },
 		],
 		examples: ["Make a dashboard of the inspections layer with a count, a pie by status and a table.",
 			"An interactive dashboard of the users layer: owners and users counts in tabs, a pie by governorate, sign-ups per day.",
@@ -208,7 +209,9 @@ export const TOOL_DOCS: ToolDoc[] = [
 			"An Experience Builder app of my sites map: filters and counts on the left, the map in the middle, charts on the right, a table at the bottom.",
 			"Create a Sidebar Instant App of my parks map.", "Build a story about the river project with the flood map in the middle."],
 		notes: ["Apps are created private in your content; share them with portal_share.",
+			"Experience Builder custom widgets are local scaffolds, not ArcGIS items. Install the full skill folder at `.github/skills/arcgis-exb-widget-dev/`; remote MCP users can copy it from [the repository skill folder](https://github.com/Ahmed-salah-muhammed/ArcGIS_Web_MCP/tree/main/.github/skills/arcgis-exb-widget-dev). Full setup and fallback steps are in the [README widget skill guide](https://github.com/Ahmed-salah-muhammed/ArcGIS_Web_MCP#installing-the-experience-builder-widget-skill).",
 			"Every app is written in shapes read from real items or the ArcGIS API for Python; what could not be verified is left to the app's builder: story images are linked by URL, surveys have no repeats, Experience Builder templates' widgets other than maps get their layers in the builder (apps built from widgets have them bound)."],
+		relatedPages: [{ title: "Agent Skills", id: "agent-skills" }],
 	},
 	{
 		name: "portal_survey123", category: "apps",

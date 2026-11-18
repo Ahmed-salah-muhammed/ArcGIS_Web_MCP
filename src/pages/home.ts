@@ -183,7 +183,62 @@ function apps() {
   <h2 id="apps-flow">A typical flow</h2>
   <ol class="list"><li>Publish your data (<code>portal_publish</code>) or find a layer (<code>portal_search</code>).</li>
     <li>Make a web map (<code>portal_map</code>) and add Arcade popups or labels (<code>portal_arcade</code>).</li>
-    <li>Build the app (<code>portal_app</code>), then share it (<code>portal_share</code>).</li></ol>`);
+    <li>Build the app (<code>portal_app</code>), then share it (<code>portal_share</code>).</li></ol>
+  <p>For custom Experience Builder widgets developed locally, see <a class="inline" href="#agent-skills" data-nav="agent-skills">Agent Skills</a>.</p>`);
+}
+
+function agentSkills() {
+	const skillPath = ".github/skills/arcgis-exb-widget-dev/";
+	const personalSkillPath = "~/.copilot/skills/arcgis-exb-widget-dev/";
+	return page("agent-skills", "Tools reference", "Agent Skills", `
+  <p class="lead"><code>arcgis-exb-widget-dev</code> complements the cloud MCP tools: <code>portal_app</code> can generate a
+  widget scaffold, while a local coding agent uses the Skill to complete and validate it in an Experience Builder
+  Developer Edition workspace.</p>
+  <h2 id="overview">Overview</h2>
+  <div class="tiles">
+    <div class="tile"><span class="tile-ic">${icon("grid", 20)}</span><h3>Cloud scaffold</h3>
+      <p>Call <code>portal_app</code> with <code>kind: "exb_widget"</code> to generate the starter structure and hand-off
+      instructions. The MCP tool does not write files into your local Developer Edition project.</p></div>
+    <div class="tile"><span class="tile-ic">${icon("code", 20)}</span><h3>Local implementation</h3>
+      <p>The <code>arcgis-exb-widget-dev</code> Skill guides the local agent through the widget's behavior, map
+      interactions, communication between widgets with Message/Data Actions, and focused tests.</p></div>
+  </div>
+  <h2 id="remote">Remote MCP limitation</h2>
+  <div class="tile"><span class="tile-ic">${icon("server", 20)}</span><h3>Why install it manually?</h3>
+    <p>The remote server at <a class="inline" href="https://arcgis.web-mcp.workers.dev/mcp" target="_blank" rel="noopener noreferrer">https://arcgis.web-mcp.workers.dev/mcp</a>
+    runs separately from your computer and cannot write files into your workspace. This endpoint does not currently
+    provide the Skill through VS Code's experimental Skills from MCP servers feature, so install the folder locally once.</p>
+  </div>
+  <h2 id="installation">Installation</h2>
+  <div class="tiles">
+    <div class="tile"><span class="tile-ic">${icon("folder", 20)}</span><h3>Cloned repository</h3>
+      <p>The Skill is already included and VS Code discovers it when you open this repository.</p>${code(skillPath)}</div>
+    <div class="tile"><span class="tile-ic">${icon("copy", 20)}</span><h3>Remote MCP users</h3>
+      <p>Copy the entire Skill folder from the
+      <a class="inline" href="https://github.com/Ahmed-salah-muhammed/ArcGIS_Web_MCP/tree/main/.github/skills/arcgis-exb-widget-dev" target="_blank" rel="noopener noreferrer">repository</a>
+      into either your current workspace or your personal Copilot skills directory.</p>
+      <p>Workspace path:</p>${code(skillPath)}
+      <p>Personal path (available across workspaces):</p>${code(personalSkillPath)}</div>
+  </div>
+  <div class="tile"><span class="tile-ic">${icon("shield", 20)}</span><h3>Check your Developer Edition version</h3>
+    <p>The Skill does not install Experience Builder Developer Edition or guarantee compatibility with every release.
+    Confirm that its guidance and the widget APIs match the version installed in your <code>client/</code> project.</p>
+  </div>
+  <h2 id="workflow">End-to-end workflow</h2>
+  <div class="steps">
+    <div class="tile"><span class="step-n">1</span><span class="tile-ic">${icon("grid", 20)}</span><h3>Generate</h3>
+      <p>Call <code>portal_app</code> with <code>kind: "exb_widget"</code> and put the generated files in the widget directory below.</p></div>
+    <div class="tile"><span class="step-n">2</span><span class="tile-ic">${icon("sparkle", 20)}</span><h3>Complete locally</h3>
+      <p>In your local coding agent, invoke <code>/arcgis-exb-widget-dev</code> to implement the behavior and tests.</p></div>
+    <div class="tile"><span class="step-n">3</span><span class="tile-ic">${icon("terminal", 20)}</span><h3>Validate</h3>
+      <p>Run the type check from the Developer Edition client directory.</p></div>
+  </div>
+  <p>Widget folder:</p>${code("client/your-extensions/widgets/<name>/")}
+  <p>From the repository root:</p>${code("cd client\nnpm run tscheck")}
+  <h2 id="fallback">Fallback: <code>agent_handoff</code></h2>
+  <p>If the local agent cannot find the Skill, <code>portal_app</code> returns <code>agent_handoff</code> with a fallback:
+  inspect existing widget patterns and SDK samples, implement the behavior, add focused tests, and run
+  <code>npm run tscheck</code> from <code>client/</code>.</p>`);
 }
 
 function toolPage(t: ToolDoc) {
@@ -199,7 +254,9 @@ function toolPage(t: ToolDoc) {
   ${t.inputs ? `<h2 id="inputs-${t.name}">What you give it</h2>${rows(t.inputs, "Argument")}` : ""}
   <h2 id="ask-${t.name}">Try asking</h2>
   <div class="prompts">${t.examples.map((e) => `<div class="prompt">${icon("chat", 16)}<span>${esc(e)}</span></div>`).join("")}</div>
-  ${t.notes?.length ? `<h2 id="notes-${t.name}">Good to know</h2><ul class="list">${t.notes.map((n) => `<li>${rich(n)}</li>`).join("")}</ul>` : ""}`,
+  ${t.notes?.length ? `<h2 id="notes-${t.name}">Good to know</h2><ul class="list">${t.notes.map((n) => `<li>${rich(n)}</li>`).join("")}</ul>` : ""}
+  ${t.relatedPages?.length ? `<p>Related guide: ${t.relatedPages.map(({ title, id }) =>
+		`<a class="inline" href="#${esc(id)}" data-nav="${esc(id)}">${esc(title)}</a>`).join(", ")}</p>` : ""}`,
 	{ mono: true });
 }
 
@@ -321,6 +378,7 @@ function sidebar(byCategory: Map<string, ToolDoc[]>, author: Author | null) {
     <p class="label">ArcGIS Online apps</p><a class="nav apps-link" href="#apps" data-nav="apps">
       <span class="apps-nav-icons">${appIcons}</span><span>Build  Apps</span></a>
     <p class="label label-counted"><span>Tools reference</span><span class="group-count">${TOOL_DOCS.length}</span></p>${toolGroups}
+    <a class="nav" href="#agent-skills" data-nav="agent-skills">${icon("sparkle", 18)}<span>Agent Skills</span><span class="group-count">1</span></a>
     <p class="label">Guides &amp; specs</p>${link("security", "shield", "Security &amp; Permissions")}
     ${link("limits", "gauge", "Limits")}
   </nav>
@@ -549,6 +607,7 @@ export function homePage(origin: string, author: Author | null): string {
           ${overview(url, TOOL_DOCS.length)}
           ${connect(url)}
           ${apps()}
+          ${agentSkills()}
           ${tools(byCategory)}
           ${TOOL_DOCS.map(toolPage).join("\n")}
           ${security()}

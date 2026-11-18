@@ -77,12 +77,31 @@ Add this to the client's MCP config ([Node.js](https://nodejs.org) required), th
 | `portal_layer_schema` | Fields, capabilities, styles, labels, attachments and filtered views |
 | `portal_map` | Create and edit web maps: layers, popups, styles, filters, basemaps |
 | `portal_arcade` | Arcade expressions: ready-made templates, a check against the layer's fields, popups, labels and Field Maps form rules |
-| `portal_app` | Apps from your maps and layers: Instant Apps, Dashboards, Experience Builder, StoryMaps, Survey123, Field Maps, Experience Builder Developer Edition |
+| `portal_app` | Apps from your maps and layers: Instant Apps, Dashboards, Experience Builder, StoryMaps, Survey123, Field Maps; Developer Edition widgets are starter scaffolds for the local `arcgis-exb-widget-dev` skill |
 | `portal_groups` | Search, create, update and delete groups; add, invite and remove members |
 | `portal_rest` | Any ArcGIS REST request with your sign-in |
 | `portal_batch` | Up to 10 tool calls in one request, each reusing earlier results |
 
 Deleting, bulk edits, public sharing and anything that spends credits ask for your confirmation first.
+
+## Installing the Experience Builder widget skill
+
+`portal_app` with `kind: "exb_widget"` returns a starter file bundle. It does not install the bundle on your machine, implement the widget's behavior, or create an ArcGIS item. The local coding agent completes the widget using the `arcgis-exb-widget-dev` skill.
+
+### If you cloned this repository
+
+The complete skill is included at [`.github/skills/arcgis-exb-widget-dev/`](.github/skills/arcgis-exb-widget-dev/). Open this repository as a VS Code workspace, start a new agent chat if needed for skill discovery, and invoke `/arcgis-exb-widget-dev` with the widget requirements.
+
+### If you only use the remote MCP
+
+Copy the **entire** [`arcgis-exb-widget-dev` skill folder](https://github.com/Ahmed-salah-muhammed/ArcGIS_Web_MCP/tree/main/.github/skills/arcgis-exb-widget-dev) into `.github/skills/arcgis-exb-widget-dev/` in your own coding workspace. Keep its `references/`, `assets/`, and `LICENSE.txt` files; then reload the workspace or start a new agent chat and invoke `/arcgis-exb-widget-dev`. The MCP server cannot install or activate a skill on your machine.
+
+### Complete the widget locally
+
+1. Check the Developer Edition's `client/package.json` and use its `exb-client.version` when requesting the scaffold; the MCP cannot detect your local version.
+2. Before editing, inspect nearby widgets and SDK samples that match that version.
+3. Implement the requested runtime and settings behavior, manifest/config, translations, and any required map/data/action contracts; add focused tests.
+4. From the Developer Edition `client/` directory, run `npm run tscheck`, then run the widget in Experience Builder and verify its configured and runtime states.
 
 ## Apps: what `portal_app` builds and what is left
 
