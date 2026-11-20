@@ -161,7 +161,7 @@ function tools(byCategory: Map<string, ToolDoc[]>) {
   <div class="group-head"><span class="group-ic ${c.color}">${icon(c.icon, 20)}</span>
     <div><h3>${esc(c.name)} <span class="tag">${c.id}</span></h3><p>${esc(c.summary)}</p></div>
     <div class="group-meta"><span>Tools</span><b>${list.length}</b></div></div>
-  <div class="chips">${list.map((t) => `<a class="chip" href="#t-${t.name}" data-search="${esc(`${t.name} ${t.summary}`.toLowerCase())}">
+  <div class="chips">${list.map((t) => `<a class="chip" href="/tools-${t.name}" data-search="${esc(`${t.name} ${t.summary}`.toLowerCase())}">
     <i></i><span>${t.name}</span></a>`).join("")}</div>
 </div>`;
 	}).join("");
@@ -379,7 +379,7 @@ function sidebar(byCategory: Map<string, ToolDoc[]>, author: Author | null) {
 			.filter((tool) => tool.name !== "portal_survey123");
 		return `<details class="navgroup tool-group" data-group="${group.id}"><summary>${icon(group.icon, 18)}<span>${group.name}</span>
       <span class="group-count">${tools.length}</span><i class="chev">${icon("chevron", 14)}</i></summary>${tools.map((t) =>
-			`<a class="nav sub" href="#t-${t.name}" data-nav="t-${t.name}"><span>${t.name}</span></a>`).join("")}</details>`;
+			`<a class="nav sub" href="/tools-${t.name}" data-nav="t-${t.name}"><span>${t.name}</span></a>`).join("")}</details>`;
 	}).join("");
 	const clientOptions: [string, string, string[]][] = [
 		["desktop", "Claude Desktop", ["/client-icons/claude.svg"]],
@@ -395,8 +395,8 @@ function sidebar(byCategory: Map<string, ToolDoc[]>, author: Author | null) {
   <nav>
     <details class="nav-section" open><summary class="label section-toggle">${icon("sliders", 14)}<span>Get started</span>
       <i class="chev">${icon("chevron", 14)}</i></summary>
-      ${link("overview", "arrows", "Overview")}
-      ${link("architecture", "server", "Architecture")}
+      <a class="nav" href="/overview" data-nav="overview">${icon("arrows", 18)}<span>Overview</span></a>
+      <a class="nav" href="/architecture" data-nav="architecture">${icon("server", 18)}<span>Architecture</span></a>
     <details class="navgroup install-group" open><summary data-nav="connect">${icon("terminal", 18)}<span>Install Client</span>
       <i class="chev">${icon("chevron", 14)}</i></summary>${clients}</details>
     </details>
@@ -440,7 +440,13 @@ const SCRIPT = `
     breadcrumb.append(item);
   }
   function show() {
-    const id = decodeURIComponent(location.hash.slice(1)) || "overview";
+    const pathname = location.pathname.replace(/\/+$/, "") || "/overview";
+    let routeId = "overview";
+    if (pathname === "/architecture") routeId = "architecture";
+    else if (pathname.startsWith("/tools-")) routeId = "t-" + decodeURIComponent(pathname.slice("/tools-".length));
+    else if (pathname.startsWith("/tools/")) routeId = "t-" + decodeURIComponent(pathname.slice("/tools/".length));
+    else if (location.hash) routeId = decodeURIComponent(location.hash.slice(1));
+    const id = routeId;
     const page = document.getElementById("p-" + id) || document.getElementById("p-overview");
     const current = page.id.slice(2);
     pages.forEach((p) => { p.hidden = p !== page; });
@@ -614,13 +620,13 @@ export function homePage(origin: string, author: Author | null): string {
 <div class="app">
   <header class="top">
     <button class="burger" id="burger" type="button" aria-label="Menu">${icon("menu", 22)}</button>
-    <a class="brand" href="#overview" aria-label="ArcGIS Web MCP documentation"><span class="logo"><img class="brand-logo" src="/brand-logo.png" alt=""></span><span>ArcGIS <em>Web MCP</em></span></a>
+    <a class="brand" href="/overview" aria-label="ArcGIS Web MCP documentation"><span class="logo"><img class="brand-logo" src="/brand-logo.png" alt=""></span><span>ArcGIS <em>Web MCP</em></span></a>
     <span class="ver">v${VERSION}</span><span class="ver beta">Beta</span>
     <button class="search-trigger" id="search-open" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="search-overlay">
       ${icon("search", 16)}<span>Search documentation…</span><kbd>Ctrl K</kbd></button>
     <nav><a class="github-link" href="https://github.com/Ahmed-salah-muhammed/ArcGIS_Web_MCP" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository">${icon("github", 16)}<span>GitHub</span></a>
       <a href="${author?.url ? esc(author.url) : "#about"}" ${author?.url ? 'target="_blank" rel="noopener noreferrer"' : 'data-nav="about"'}>Go to Portfolio</a>
-      <a href="#contact" data-nav="contact">Contact us</a><a href="#overview" data-nav="overview">Documentation</a>
+      <a href="#contact" data-nav="contact">Contact us</a><a href="/overview" data-nav="overview">Documentation</a>
       <button class="btn primary" type="button" data-copy="${url}" title="Copy server URL" aria-label="Copy server URL">${icon("copy", 15)}<span>Copy Server URL</span></button></nav>
   </header>
   <div class="body">

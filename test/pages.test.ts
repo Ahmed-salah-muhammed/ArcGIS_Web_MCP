@@ -102,7 +102,9 @@ describe("pages", () => {
 		}
 		expect(sideNav.indexOf('href="#apps"')).toBeLessThan(sideNav.indexOf("Tools reference"));
 		expect(sideNav).toContain("Overview</span>");
-		expect(sideNav).toContain('href="#architecture" data-nav="architecture"');
+		expect(sideNav).toContain('href="/overview" data-nav="overview"');
+		expect(sideNav).toContain('href="/architecture" data-nav="architecture"');
+		expect(sideNav).toContain('href="/tools-portal_publish"');
 		expect(sideNav).not.toContain('href="#t-portal_survey123"');
 		expect(html).toContain('id="p-t-portal_survey123"');
 		expect(sideNav).toContain("Security &amp; Permissions");
@@ -120,7 +122,7 @@ describe("pages", () => {
 		expect(sidebar.indexOf('<footer class="side-foot">')).toBeGreaterThan(sidebar.indexOf("</nav>"));
 		expect(sidebar).toContain('class="me" href="#about"');
 		expect(sidebar).not.toContain("Full Portfolio");
-		for (const tool of TOOL_DOCS) expect(html).toContain(`href="#t-${tool.name}"`);
+		for (const tool of TOOL_DOCS) expect(html).toContain(`href="/tools-${tool.name}"`);
 		expect(html).not.toContain("MCP tools documented");
 		expect(html.indexOf('id="p-apps"')).toBeLessThan(html.indexOf('id="p-tools"'));
 		expect(html).toContain('id="p-agent-skills" data-title="Agent Skills"');
