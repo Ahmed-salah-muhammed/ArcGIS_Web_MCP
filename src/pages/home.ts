@@ -105,12 +105,12 @@ function architecture() {
 	<p class="lead">ArcGIS Web MCP connects MCP clients to ArcGIS Online or ArcGIS Enterprise through a secure Cloudflare
 	Worker. The signed-in ArcGIS user keeps their own identity and permissions across every tool call.</p>
 	<div class="architecture-actions">
-	  <a class="btn primary" href="/arcgis-web-mcp-architecture.svg" target="_blank" rel="noopener noreferrer">
+	  <a class="btn primary" href="/arcgis-web-mcp-architecture.svg?v=static-card" target="_blank" rel="noopener noreferrer">
 	    ${icon("search", 16)}<span>Open full size</span>
 	  </a>
 	</div>
 	<figure class="architecture">
-	  <img src="/arcgis-web-mcp-architecture.svg" alt="Animated ArcGIS Web MCP enterprise architecture">
+	  <img src="/arcgis-web-mcp-architecture.svg?v=static-card" alt="ArcGIS Web MCP enterprise architecture">
 	</figure>
 	<h2 id="flow">Request flow</h2>
 	<div class="steps">

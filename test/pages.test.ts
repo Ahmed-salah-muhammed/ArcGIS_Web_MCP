@@ -52,7 +52,7 @@ describe("pages", () => {
 		expect(html).toContain("https://arcgis.example.workers.dev/mcp");
 		expect(html).toContain("portal_publish");
 		expect(html).toContain('id="p-architecture"');
-		expect(html).toContain('src="/arcgis-web-mcp-architecture.svg"');
+		expect(html).toContain('src="/arcgis-web-mcp-architecture.svg?v=static-card"');
 		expect(html).toContain("Ahmed Salah Muhammed");
 		expect(homePage("https://a.dev", null)).not.toContain("Developed by");
 	});
