@@ -51,6 +51,8 @@ describe("pages", () => {
 		const html = homePage("https://arcgis.example.workers.dev/", AUTHOR);
 		expect(html).toContain("https://arcgis.example.workers.dev/mcp");
 		expect(html).toContain("portal_publish");
+		expect(html).toContain('id="p-architecture"');
+		expect(html).toContain('src="/arcgis-web-mcp-architecture.svg"');
 		expect(html).toContain("Ahmed Salah Muhammed");
 		expect(homePage("https://a.dev", null)).not.toContain("Developed by");
 	});
@@ -99,7 +101,8 @@ describe("pages", () => {
 			for (const logo of logos) expect(link).toContain(`src="${logo}"`);
 		}
 		expect(sideNav.indexOf('href="#apps"')).toBeLessThan(sideNav.indexOf("Tools reference"));
-		expect(sideNav).toContain("Overview &amp; Architecture");
+		expect(sideNav).toContain("Overview</span>");
+		expect(sideNav).toContain('href="#architecture" data-nav="architecture"');
 		expect(sideNav).not.toContain('href="#t-portal_survey123"');
 		expect(html).toContain('id="p-t-portal_survey123"');
 		expect(sideNav).toContain("Security &amp; Permissions");
@@ -108,6 +111,10 @@ describe("pages", () => {
 		expect(sideNav).not.toContain("OAuth 2.0 PKCE Flow");
 		expect(sideNav).not.toContain("Chatbots vs MCP");
 		const headerNav = html.slice(html.indexOf('<header class="top">'), html.indexOf("</header>"));
+		expect(headerNav).toContain('class="github-link"');
+		expect(headerNav).toContain('href="https://github.com/Ahmed-salah-muhammed/ArcGIS_Web_MCP"');
+		expect(headerNav).toContain('target="_blank" rel="noopener noreferrer"');
+		expect(headerNav).toContain('aria-label="GitHub repository"');
 		expect(headerNav).not.toContain('href="#tools"');
 		expect(headerNav).not.toContain('href="#connect"');
 		expect(sidebar.indexOf('<footer class="side-foot">')).toBeGreaterThan(sidebar.indexOf("</nav>"));
