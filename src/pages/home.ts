@@ -112,6 +112,18 @@ function architecture() {
 	<figure class="architecture">
 	  <img src="/arcgis-web-mcp-architecture.svg?v=static-card" alt="ArcGIS Web MCP enterprise architecture">
 	</figure>
+	<h2 id="architecture-components">How to read the diagram</h2>
+	<div class="architecture-components">
+	  <article class="architecture-component clients">
+	    <h3>MCP clients</h3><p>AI assistants send tool requests over HTTPS. They do not connect directly to your ArcGIS data.</p>
+	  </article>
+	  <article class="architecture-component worker">
+	    <h3>ArcGIS Web MCP on Cloudflare Workers</h3><p>The Worker authenticates the request, securely keeps the ArcGIS grant, and calls the right ArcGIS services.</p>
+	  </article>
+	  <article class="architecture-component organization">
+	    <h3>Your ArcGIS organization</h3><p>ArcGIS Online or Enterprise applies the signed-in user's permissions to every operation.</p>
+	  </article>
+	</div>
 	<h2 id="flow">Request flow</h2>
 	<div class="steps">
 	  <div class="step"><span class="step-n">1</span><div class="step-ic">${icon("chat", 20)}</div>
@@ -440,23 +452,25 @@ const SCRIPT = `
     item.textContent = text;
     breadcrumb.append(item);
   }
+  function pageIdForPath(pathname, hash) {
+    const path = pathname.replace(/\\/+$/, "") || "/";
+    if (path === "/" && hash) return decodeURIComponent(hash.slice(1));
+    if (path === "/" || path === "/overview") return "overview";
+    if (path === "/architecture") return "architecture";
+    if (path === "/connect") return "connect";
+    if (path === "/apps") return "apps";
+    if (path === "/agent-skills") return "agent-skills";
+    if (path === "/tools") return "tools";
+    if (path === "/security") return "security";
+    if (path === "/limits") return "limits";
+    if (path === "/contact") return "contact";
+    if (path === "/about") return "about";
+    if (path.startsWith("/tools-")) return "t-" + decodeURIComponent(path.slice("/tools-".length));
+    if (path.startsWith("/tools/")) return "t-" + decodeURIComponent(path.slice("/tools/".length));
+    return null;
+  }
   function show() {
-    const pathname = location.pathname.replace(/\\/+$/, "") || "/overview";
-    let routeId = "overview";
-    if (pathname === "/" || pathname === "/overview") routeId = "overview";
-    else if (pathname === "/architecture") routeId = "architecture";
-    else if (pathname === "/connect") routeId = "connect";
-    else if (pathname === "/apps") routeId = "apps";
-    else if (pathname === "/agent-skills") routeId = "agent-skills";
-    else if (pathname === "/tools") routeId = "tools";
-    else if (pathname === "/security") routeId = "security";
-    else if (pathname === "/limits") routeId = "limits";
-    else if (pathname === "/contact") routeId = "contact";
-    else if (pathname === "/about") routeId = "about";
-    else if (pathname.startsWith("/tools-")) routeId = "t-" + decodeURIComponent(pathname.slice("/tools-".length));
-    else if (pathname.startsWith("/tools/")) routeId = "t-" + decodeURIComponent(pathname.slice("/tools/".length));
-    else if (location.hash) routeId = decodeURIComponent(location.hash.slice(1));
-    const id = routeId;
+    const id = pageIdForPath(location.pathname, location.hash) || "overview";
     const page = document.getElementById("p-" + id) || document.getElementById("p-overview");
     const current = page.id.slice(2);
     pages.forEach((p) => { p.hidden = p !== page; });
@@ -550,6 +564,18 @@ const SCRIPT = `
     catch { if (label) label.textContent = "Select & copy"; }
     setTimeout(() => { if (label) label.textContent = was; }, 1600);
   });
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("a[href]");
+    if (!link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey
+      || (link.target && link.target !== "_self") || link.hasAttribute("download")) return;
+    const url = new URL(link.href, location.href);
+    if (url.origin !== location.origin) return;
+    const id = pageIdForPath(url.pathname, url.hash);
+    if (!id || !document.getElementById("p-" + id)) return;
+    e.preventDefault();
+    if (url.href !== location.href) history.pushState({}, "", url.href);
+    show();
+  });
   document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
     const box = t.closest(".page");
     box.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === t));
@@ -608,6 +634,7 @@ const SCRIPT = `
   document.getElementById("burger").addEventListener("click", (e) => { e.stopPropagation(); side.classList.toggle("open"); });
   document.querySelector(".main").addEventListener("click", () => side.classList.remove("open"));
   addEventListener("hashchange", show);
+  addEventListener("popstate", show);
   show();
 })();
 `;

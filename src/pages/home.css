@@ -65,6 +65,12 @@ hr { border-right: 0px; border-bottom: 0px; border-left: 0px; border-image: none
 .architecture { margin: 1.1rem 0 1.5rem; overflow: hidden; border: none; border-radius: 0; background: #1a1a1a; }
 .architecture img { display: block; width: 100%; height: auto; }
 .architecture-actions { display: flex; justify-content: flex-end; margin: 0 0 0.7rem; }
+.architecture-components { display: grid; grid-template-columns: repeat(3, minmax(0px, 1fr)); gap: 0.8rem; margin: 0.8rem 0 1.5rem; }
+.architecture-component { padding: 0.9rem 1rem; border: 1px solid var(--line-2); border-top: 2px solid var(--blue); border-radius: 12px; background: var(--card); }
+.architecture-component h3 { margin: 0 0 0.35rem; font-size: 0.95rem; }
+.architecture-component p { margin: 0; color: var(--muted); font-size: 0.84rem; }
+.architecture-component.worker { border-top-color: var(--orange); }
+.architecture-component.organization { border-top-color: var(--green); }
 .features { display: grid; grid-template-columns: repeat(3, minmax(0px, 1fr)); gap: 1rem; }
 .feature { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; transition: border-color 0.15s, transform 0.15s; }
 .feature:hover { border-color: rgb(63, 63, 70); transform: translateY(-2px); }
@@ -473,6 +479,7 @@ body { background: rgb(16, 17, 18); }
 }
 @media (max-width: 700px) {
   .app { grid-template-rows: 58px minmax(0px, 1fr); }
+  .architecture-components { grid-template-columns: minmax(0px, 1fr); }
   .top nav a { display: none !important; }
   .burger { display: inline-flex; }
   .body { grid-template-columns: minmax(0px, 1fr); }

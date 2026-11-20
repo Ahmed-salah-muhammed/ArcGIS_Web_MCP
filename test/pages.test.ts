@@ -53,6 +53,8 @@ describe("pages", () => {
 		expect(html).toContain("portal_publish");
 		expect(html).toContain('id="p-architecture"');
 		expect(html).toContain('src="/arcgis-web-mcp-architecture.svg?v=static-card"');
+		expect(html).toContain('id="architecture-components"');
+		expect(html).toContain("AI assistants send tool requests over HTTPS.");
 		expect(html).toContain("Ahmed Salah Muhammed");
 		expect(homePage("https://a.dev", null)).not.toContain("Developed by");
 	});
@@ -132,6 +134,8 @@ describe("pages", () => {
 		expect(html.indexOf('id="p-apps"')).toBeLessThan(html.indexOf('id="p-tools"'));
 		expect(html).toContain('id="p-agent-skills" data-title="Agent Skills"');
 		expect(html).toContain('document.querySelectorAll(".page")');
+		expect(html).toContain("history.pushState({}, \"\", url.href)");
+		expect(html).toContain('addEventListener("popstate", show)');
 		expect(html).toContain("Message/Data Actions");
 		expect(html).toContain("https://arcgis.web-mcp.workers.dev/mcp");
 		expect(html).toContain(".github/skills/arcgis-exb-widget-dev/");
