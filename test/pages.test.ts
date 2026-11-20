@@ -81,11 +81,11 @@ describe("pages", () => {
 		expect(html).toContain('>Power Tools</span>');
 		const sidebar = html.slice(html.indexOf('<aside class="side"'), html.indexOf("</aside>"));
 		const sideNav = sidebar.slice(sidebar.indexOf("<nav>"), sidebar.indexOf("</nav>"));
-		expect(sideNav).toContain('<a class="nav" href="#agent-skills" data-nav="agent-skills">');
+		expect(sideNav).toContain('<a class="nav" href="/agent-skills" data-nav="agent-skills">');
 		expect(sideNav).toContain('<span>Agent Skills</span><span class="group-count">1</span>');
 		expect(sideNav.indexOf(">Power Tools</span>")).toBeLessThan(sideNav.indexOf(">Agent Skills</span>"));
 		expect(sideNav.indexOf(">Agent Skills</span>")).toBeLessThan(sideNav.indexOf("Guides &amp; specs"));
-		expect(sideNav).toContain('href="#apps" data-nav="apps"');
+		expect(sideNav).toContain('href="/apps" data-nav="apps"');
 		expect(sideNav).toContain('class="apps-nav-icons"');
 		const clientLinks = [
 			["desktop", ["/client-icons/claude.svg"]],
@@ -100,10 +100,15 @@ describe("pages", () => {
 			expect(link).toContain('class="client-logos"');
 			for (const logo of logos) expect(link).toContain(`src="${logo}"`);
 		}
-		expect(sideNav.indexOf('href="#apps"')).toBeLessThan(sideNav.indexOf("Tools reference"));
+		expect(sideNav.indexOf('href="/apps"')).toBeLessThan(sideNav.indexOf("Tools reference"));
 		expect(sideNav).toContain("Overview</span>");
 		expect(sideNav).toContain('href="/overview" data-nav="overview"');
 		expect(sideNav).toContain('href="/architecture" data-nav="architecture"');
+		expect(sideNav).toContain('href="/connect"');
+		expect(sideNav).toContain('href="/apps"');
+		expect(sideNav).toContain('href="/agent-skills"');
+		expect(sideNav).toContain('href="/security"');
+		expect(sideNav).toContain('href="/limits"');
 		expect(sideNav).toContain('href="/tools-portal_publish"');
 		expect(sideNav).not.toContain('href="#t-portal_survey123"');
 		expect(html).toContain('id="p-t-portal_survey123"');
@@ -120,7 +125,7 @@ describe("pages", () => {
 		expect(headerNav).not.toContain('href="#tools"');
 		expect(headerNav).not.toContain('href="#connect"');
 		expect(sidebar.indexOf('<footer class="side-foot">')).toBeGreaterThan(sidebar.indexOf("</nav>"));
-		expect(sidebar).toContain('class="me" href="#about"');
+		expect(sidebar).toContain('class="me" href="/about"');
 		expect(sidebar).not.toContain("Full Portfolio");
 		for (const tool of TOOL_DOCS) expect(html).toContain(`href="/tools-${tool.name}"`);
 		expect(html).not.toContain("MCP tools documented");
@@ -137,9 +142,9 @@ describe("pages", () => {
 		expect(html).toContain("npm run tscheck");
 		expect(html).toContain("<code>agent_handoff</code>");
 		const appsPage = html.slice(html.indexOf('id="p-apps"'), html.indexOf('id="p-agent-skills"'));
-		expect(appsPage).toContain('href="#agent-skills" data-nav="agent-skills">Agent Skills</a>');
+		expect(appsPage).toContain('href="/agent-skills" data-nav="agent-skills">Agent Skills</a>');
 		const portalAppDoc = html.slice(html.indexOf('id="p-t-portal_app"'), html.indexOf('id="p-t-portal_survey123"'));
-		expect(portalAppDoc).toContain('href="#agent-skills" data-nav="agent-skills">Agent Skills</a>');
+		expect(portalAppDoc).toContain('href="/agent-skills" data-nav="agent-skills">Agent Skills</a>');
 		expect(html).not.toMatch(/<svg\b[^>]*>\s*<\/svg>/);
 		expect(HOME_HEADERS["Content-Security-Policy"]).toContain("style-src 'self'");
 		expect(HOME_HEADERS["Content-Security-Policy"]).toContain("img-src 'self' data:");
@@ -169,7 +174,7 @@ describe("pages", () => {
 
 	it("the home page has the contact form, and may only call its own origin", () => {
 		const html = homePage("https://a.dev", AUTHOR);
-		expect(html).toContain('<a href="#contact" data-nav="contact">Contact us</a>');
+		expect(html).toContain('<a href="/contact" data-nav="contact">Contact us</a>');
 		expect(html).toContain('id="contact-form"');
 		for (const t of TOPICS) expect(html).toContain(`data-topic="${t.replace(/&/g, "&amp;")}"`);
 		expect(html).toContain('data-topic="Question about the MCP" aria-pressed="true"');

@@ -76,9 +76,9 @@ function page(id: string, eyebrow: string, title: string, body: string, opts: { 
 
 function overview(url: string, toolCount: number) {
 	const cards = [
-		["search", "blue", "Find & read", "Search your organization, read items, query layers, count and summarize.", "#tools"],
-		["layers", "green", "Publish & edit", "Turn CSV or GeoJSON into hosted layers, edit features, add fields and styles.", "#tools"],
-		["map", "orange", "Maps & apps", "Web maps, dashboards, Instant Apps, StoryMaps, Experience Builder, Survey123 and Field Maps.", "#apps"],
+		["search", "blue", "Find & read", "Search your organization, read items, query layers, count and summarize.", "/tools"],
+		["layers", "green", "Publish & edit", "Turn CSV or GeoJSON into hosted layers, edit features, add fields and styles.", "/tools"],
+		["map", "orange", "Maps & apps", "Web maps, dashboards, Instant Apps, StoryMaps, Experience Builder, Survey123 and Field Maps.", "/apps"],
 	].map(([ic, color, title, text, href]) => `<a class="feature" href="${href}"><div class="feature-art ${color}">${icon(ic, 34)}</div>
     <div class="feature-body"><h3>${title}</h3><p>${text}</p></div></a>`).join("");
 	const steps = [
@@ -201,14 +201,14 @@ function apps() {
     <div><h3>${name}</h3><code>kind=${kind}</code></div></div><p>${what}</p>
     <div class="prompt">${icon("chat", 16)}<span>${esc(ask)}</span></div></div>`).join("");
 	return page("apps", "Apps & maps", "Build apps", `
-  <p class="lead">From a web map or a layer to a finished app in one request, with <a class="inline" href="#t-portal_app">portal_app</a>.
+  <p class="lead">From a web map or a layer to a finished app in one request, with <a class="inline" href="/tools-portal_app">portal_app</a>.
   Each app is created private in your content, with the link to open it.</p>
   <div class="apps">${cards}</div>
   <h2 id="apps-flow">A typical flow</h2>
   <ol class="list"><li>Publish your data (<code>portal_publish</code>) or find a layer (<code>portal_search</code>).</li>
     <li>Make a web map (<code>portal_map</code>) and add Arcade popups or labels (<code>portal_arcade</code>).</li>
     <li>Build the app (<code>portal_app</code>), then share it (<code>portal_share</code>).</li></ol>
-  <p>For custom Experience Builder widgets developed locally, see <a class="inline" href="#agent-skills" data-nav="agent-skills">Agent Skills</a>.</p>`);
+  <p>For custom Experience Builder widgets developed locally, see <a class="inline" href="/agent-skills" data-nav="agent-skills">Agent Skills</a>.</p>`);
 }
 
 function agentSkills() {
@@ -280,7 +280,7 @@ function toolPage(t: ToolDoc) {
   <div class="prompts">${t.examples.map((e) => `<div class="prompt">${icon("chat", 16)}<span>${esc(e)}</span></div>`).join("")}</div>
   ${t.notes?.length ? `<h2 id="notes-${t.name}">Good to know</h2><ul class="list">${t.notes.map((n) => `<li>${rich(n)}</li>`).join("")}</ul>` : ""}
   ${t.relatedPages?.length ? `<p>Related guide: ${t.relatedPages.map(({ title, id }) =>
-		`<a class="inline" href="#${esc(id)}" data-nav="${esc(id)}">${esc(title)}</a>`).join(", ")}</p>` : ""}`,
+		`<a class="inline" href="/${esc(id)}" data-nav="${esc(id)}">${esc(title)}</a>`).join(", ")}</p>` : ""}`,
 	{ mono: true });
 }
 
@@ -367,8 +367,9 @@ function contact(author: Author | null) {
 }
 
 function sidebar(byCategory: Map<string, ToolDoc[]>, author: Author | null) {
+	const pageRoute = (id: string) => id.startsWith("t-") ? `/tools-${id.slice(2)}` : `/${id}`;
 	const link = (hash: string, ic: string, label: string, nav = hash) =>
-		`<a class="nav" href="#${hash}" data-nav="${nav}">${icon(ic, 18)}<span>${label}</span></a>`;
+		`<a class="nav" href="${pageRoute(hash)}" data-nav="${nav}">${icon(ic, 18)}<span>${label}</span></a>`;
 	const toolGroups = [
 		{ id: "read", name: "Find &amp; Read", icon: "search", categories: ["read"] },
 		{ id: "publish", name: "Publish &amp; Edit", icon: "layers", categories: ["data"] },
@@ -387,7 +388,7 @@ function sidebar(byCategory: Map<string, ToolDoc[]>, author: Author | null) {
 		["cursor", "Cursor &amp; Windsurf", ["/client-icons/cursor.svg", "/client-icons/windsurf.svg"]],
 		["vscode", "VS Code", ["/client-icons/vscode.png"]],
 	];
-	const clients = clientOptions.map(([tab, name, logos]) => `<a class="nav sub" href="#connect" data-client-tab="${tab}"><span class="client-logos">${logos
+	const clients = clientOptions.map(([tab, name, logos]) => `<a class="nav sub" href="/connect" data-client-tab="${tab}"><span class="client-logos">${logos
 		.map((src) => `<img src="${src}" alt="" width="14" height="14">`).join("")}</span><span>${name}</span></a>`).join("");
 	const appIcons = ["instant", "dashboard", "experience", "storymap", "survey", "fieldmaps"]
 		.map((kind) => `<img src="${APP_ICONS[kind]}" alt="" width="16" height="16">`).join("");
@@ -400,15 +401,15 @@ function sidebar(byCategory: Map<string, ToolDoc[]>, author: Author | null) {
     <details class="navgroup install-group" open><summary data-nav="connect">${icon("terminal", 18)}<span>Install Client</span>
       <i class="chev">${icon("chevron", 14)}</i></summary>${clients}</details>
     </details>
-    <p class="label">ArcGIS Online apps</p><a class="nav apps-link" href="#apps" data-nav="apps">
+    <p class="label">ArcGIS Online apps</p><a class="nav apps-link" href="/apps" data-nav="apps">
       <span class="apps-nav-icons">${appIcons}</span><span>Build  Apps</span></a>
     <p class="label label-counted"><span>Tools reference</span><span class="group-count">${TOOL_DOCS.length}</span></p>${toolGroups}
-    <a class="nav" href="#agent-skills" data-nav="agent-skills">${icon("sparkle", 18)}<span>Agent Skills</span><span class="group-count">1</span></a>
+    <a class="nav" href="/agent-skills" data-nav="agent-skills">${icon("sparkle", 18)}<span>Agent Skills</span><span class="group-count">1</span></a>
     <p class="label">Guides &amp; specs</p>${link("security", "shield", "Security &amp; Permissions")}
     ${link("limits", "gauge", "Limits")}
   </nav>
   <footer class="side-foot">
-    ${author ? `<a class="me" href="#about" data-nav="about">${avatarHtml(author, "me-photo", 34)}
+    ${author ? `<a class="me" href="/about" data-nav="about">${avatarHtml(author, "me-photo", 34)}
       <span><b>${esc(author.name)}</b><small>${esc(author.title ?? "Developer")}</small></span></a>` : ""}
   </footer>
 </aside>`;
@@ -440,9 +441,18 @@ const SCRIPT = `
     breadcrumb.append(item);
   }
   function show() {
-    const pathname = location.pathname.replace(/\/+$/, "") || "/overview";
+    const pathname = location.pathname.replace(/\\/+$/, "") || "/overview";
     let routeId = "overview";
-    if (pathname === "/architecture") routeId = "architecture";
+    if (pathname === "/" || pathname === "/overview") routeId = "overview";
+    else if (pathname === "/architecture") routeId = "architecture";
+    else if (pathname === "/connect") routeId = "connect";
+    else if (pathname === "/apps") routeId = "apps";
+    else if (pathname === "/agent-skills") routeId = "agent-skills";
+    else if (pathname === "/tools") routeId = "tools";
+    else if (pathname === "/security") routeId = "security";
+    else if (pathname === "/limits") routeId = "limits";
+    else if (pathname === "/contact") routeId = "contact";
+    else if (pathname === "/about") routeId = "about";
     else if (pathname.startsWith("/tools-")) routeId = "t-" + decodeURIComponent(pathname.slice("/tools-".length));
     else if (pathname.startsWith("/tools/")) routeId = "t-" + decodeURIComponent(pathname.slice("/tools/".length));
     else if (location.hash) routeId = decodeURIComponent(location.hash.slice(1));
@@ -482,7 +492,8 @@ const SCRIPT = `
       const link = document.createElement("a");
       link.className = "search-result";
       link.setAttribute("role", "option");
-      link.href = "#" + item.id;
+      link.href = item.id.startsWith("t-") ? "/tools-" + item.id.slice(2)
+        : "/" + item.id;
       const title = document.createElement("span");
       title.textContent = item.title;
       const section = document.createElement("small");
@@ -626,7 +637,7 @@ export function homePage(origin: string, author: Author | null): string {
       ${icon("search", 16)}<span>Search documentation…</span><kbd>Ctrl K</kbd></button>
     <nav><a class="github-link" href="https://github.com/Ahmed-salah-muhammed/ArcGIS_Web_MCP" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository">${icon("github", 16)}<span>GitHub</span></a>
       <a href="${author?.url ? esc(author.url) : "#about"}" ${author?.url ? 'target="_blank" rel="noopener noreferrer"' : 'data-nav="about"'}>Go to Portfolio</a>
-      <a href="#contact" data-nav="contact">Contact us</a><a href="/overview" data-nav="overview">Documentation</a>
+      <a href="/contact" data-nav="contact">Contact us</a><a href="/overview" data-nav="overview">Documentation</a>
       <button class="btn primary" type="button" data-copy="${url}" title="Copy server URL" aria-label="Copy server URL">${icon("copy", 15)}<span>Copy Server URL</span></button></nav>
   </header>
   <div class="body">

@@ -131,8 +131,8 @@ describe("POST /contact", () => {
 		expect(stylesheet.status).toBe(200);
 		expect(stylesheet.headers.get("content-type")).toContain("text/css");
 		const get = await ArcGISHandler.request(`${SITE}/contact`, {}, env() as any);
-		expect(get.status).toBe(302);
-		expect(get.headers.get("location")).toBe("/#contact");
+		expect(get.status).toBe(200);
+		expect(await get.text()).toContain('id="p-contact"');
 		const unset = await ArcGISHandler.request(post(good), undefined, env({ CONTACT_TO: undefined }) as any);
 		expect(unset.status).toBe(503);
 	});

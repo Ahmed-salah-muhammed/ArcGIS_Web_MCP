@@ -61,10 +61,17 @@ export function portalUrl(env: Pick<Env, "ARCGIS_PORTAL_URL">): string {
 app.get("/", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
 app.get("/overview", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
 app.get("/architecture", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
+app.get("/connect", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
+app.get("/apps", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
+app.get("/agent-skills", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
+app.get("/tools", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
+app.get("/security", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
+app.get("/limits", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
+app.get("/contact", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
+app.get("/about", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
 app.get("/tools/:tool", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/tools-:tool", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
+app.get("/tools-*", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
 app.get("/home.css", () => new Response(HOME_CSS, { headers: HOME_CSS_HEADERS }));
-app.get("/contact", (c) => c.redirect("/#contact"));
 app.post("/contact", (c) => handleContact(c.req.raw, c.env as Bindings & ContactEnv));
 
 function statusPage(status: number, message: Message, headers: Record<string, string> = {}) {
