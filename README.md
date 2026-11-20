@@ -7,6 +7,10 @@ never sees your password and can only do what your account can do.
 
 **Documentation URL:** `https://arcgis.web-mcp.workers.dev/`
 
+## Architecture
+
+![ArcGIS Web MCP architecture](public/arcgis-web-mcp-architecture.svg)
+
 ## Connect
 
 The first time, a browser window opens: click **Approve**, then sign in with ArcGIS.

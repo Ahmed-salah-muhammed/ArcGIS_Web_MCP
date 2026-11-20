@@ -12,6 +12,7 @@ code { font-family: var(--mono); font-size: 0.86em; background: var(--card-2); b
 .ver { font-size: 0.68rem; font-weight: 600; color: var(--muted); border: 1px solid var(--line-2); border-radius: 6px; padding: 0 0.45rem; }
 .top nav { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.94rem; }
 .top nav a { padding: 0.38rem 0.75rem; border-radius: 8px; }
+.top nav .github-link { display: inline-flex; align-items: center; gap: 0.45rem; }
 .top nav a:hover { color: var(--text); }
 .top nav a.on { color: rgb(255, 255, 255); background: rgba(59, 130, 246, 0.16); }
 .top nav .btn { margin-left: 0.6rem; }
@@ -61,6 +62,9 @@ hr { border-right: 0px; border-bottom: 0px; border-left: 0px; border-image: none
 .endpoint { display: flex; align-items: center; gap: 0.9rem; max-width: 760px; padding: 0.55rem 0.6rem 0.55rem 1rem; background: var(--card); border: 1px solid var(--line-2); border-radius: 12px; }
 .endpoint-label { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 .endpoint code { flex: 1 1 0%; min-width: 0px; background: none; border: 0px; font-size: 0.95rem; overflow-x: auto; white-space: nowrap; color: rgb(255, 255, 255); }
+.architecture { margin: 1.1rem 0 1.5rem; overflow: hidden; border: none; border-radius: 0; background: #1a1a1a; }
+.architecture img { display: block; width: 100%; height: auto; }
+.architecture-actions { display: flex; justify-content: flex-end; margin: 0 0 0.7rem; }
 .features { display: grid; grid-template-columns: repeat(3, minmax(0px, 1fr)); gap: 1rem; }
 .feature { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; transition: border-color 0.15s, transform 0.15s; }
 .feature:hover { border-color: rgb(63, 63, 70); transform: translateY(-2px); }

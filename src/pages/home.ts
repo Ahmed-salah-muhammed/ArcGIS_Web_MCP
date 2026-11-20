@@ -1,6 +1,6 @@
 /**
  * The documentation app served at "/": a fixed app shell (top bar, sidebar, one panel, "on this page") whose pages
- * switch by URL hash (#overview, #connect, #tools, #t-portal_search, #security, #limits, #contact, #about), so the
+ * switch by URL hash (#overview, #architecture, #connect, #tools, #t-portal_search, #security, #limits, #contact, #about), so the
  * browser page never scrolls. The stylesheet is imported from this folder and served by the Worker; the contact form
  * posts JSON to /contact on this same origin (src/contact.ts).
  */
@@ -36,6 +36,7 @@ const PATHS: Record<string, string> = {
 	bug: '<rect x="8" y="6" width="8" height="14" rx="4"/><path d="M12 11v9M4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 19l3-2M19 19l-3-2M10 6 9 3M14 6l1-3"/>',
 	sparkle: '<path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9z"/><path d="M19 17v4M17 19h4"/>',
 	server: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+	github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18.2.1 15 1.9a13.4 13.4 0 0 0-6 0C5.8.1 4.7.5 4.7.5A5 5 0 0 0 4.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.6 6.8 7A4.8 4.8 0 0 0 9 18v4"/><path d="M9 18c-5 1.5-5-2.5-7-3"/>',
 	briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
 	book: '<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 21.5A2.5 2.5 0 0 1 6.5 19H20v3H6.5"/>',
 	clipboard: '<rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 4V2.5h6V4M9 11h6M9 15h6"/>',
@@ -97,6 +98,29 @@ function overview(url: string, toolCount: number) {
   <div class="features">${cards}</div>
   <h2 id="how">How it works</h2>
   <div class="steps">${steps}</div>`);
+}
+
+function architecture() {
+	return page("architecture", "System design", "Architecture", `
+	<p class="lead">ArcGIS Web MCP connects MCP clients to ArcGIS Online or ArcGIS Enterprise through a secure Cloudflare
+	Worker. The signed-in ArcGIS user keeps their own identity and permissions across every tool call.</p>
+	<div class="architecture-actions">
+	  <a class="btn primary" href="/arcgis-web-mcp-architecture.svg?v=static-card" target="_blank" rel="noopener noreferrer">
+	    ${icon("search", 16)}<span>Open full size</span>
+	  </a>
+	</div>
+	<figure class="architecture">
+	  <img src="/arcgis-web-mcp-architecture.svg?v=static-card" alt="ArcGIS Web MCP enterprise architecture">
+	</figure>
+	<h2 id="flow">Request flow</h2>
+	<div class="steps">
+	  <div class="step"><span class="step-n">1</span><div class="step-ic">${icon("chat", 20)}</div>
+	    <h3>MCP client</h3><p>The assistant discovers tools and sends a signed HTTPS MCP request.</p></div>
+	  <div class="step"><span class="step-n">2</span><div class="step-ic">${icon("lock", 20)}</div>
+	    <h3>Secure sign-in</h3><p>The Cloudflare Worker uses OAuth 2.1 and ArcGIS OAuth 2.0 PKCE.</p></div>
+	  <div class="step"><span class="step-n">3</span><div class="step-ic">${icon("globe", 20)}</div>
+	    <h3>ArcGIS permissions</h3><p>REST calls run as the signed-in user in ArcGIS Online or Enterprise.</p></div>
+	</div>`);
 }
 
 function connect(url: string) {
@@ -371,7 +395,8 @@ function sidebar(byCategory: Map<string, ToolDoc[]>, author: Author | null) {
   <nav>
     <details class="nav-section" open><summary class="label section-toggle">${icon("sliders", 14)}<span>Get started</span>
       <i class="chev">${icon("chevron", 14)}</i></summary>
-      ${link("overview", "arrows", "Overview &amp; Architecture")}
+      ${link("overview", "arrows", "Overview")}
+      ${link("architecture", "server", "Architecture")}
     <details class="navgroup install-group" open><summary data-nav="connect">${icon("terminal", 18)}<span>Install Client</span>
       <i class="chev">${icon("chevron", 14)}</i></summary>${clients}</details>
     </details>
@@ -593,7 +618,8 @@ export function homePage(origin: string, author: Author | null): string {
     <span class="ver">v${VERSION}</span><span class="ver beta">Beta</span>
     <button class="search-trigger" id="search-open" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="search-overlay">
       ${icon("search", 16)}<span>Search documentation…</span><kbd>Ctrl K</kbd></button>
-    <nav><a href="${author?.url ? esc(author.url) : "#about"}" ${author?.url ? 'target="_blank" rel="noopener noreferrer"' : 'data-nav="about"'}>Go to Portfolio</a>
+    <nav><a class="github-link" href="https://github.com/Ahmed-salah-muhammed/ArcGIS_Web_MCP" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository">${icon("github", 16)}<span>GitHub</span></a>
+      <a href="${author?.url ? esc(author.url) : "#about"}" ${author?.url ? 'target="_blank" rel="noopener noreferrer"' : 'data-nav="about"'}>Go to Portfolio</a>
       <a href="#contact" data-nav="contact">Contact us</a><a href="#overview" data-nav="overview">Documentation</a>
       <button class="btn primary" type="button" data-copy="${url}" title="Copy server URL" aria-label="Copy server URL">${icon("copy", 15)}<span>Copy Server URL</span></button></nav>
   </header>
@@ -605,6 +631,7 @@ export function homePage(origin: string, author: Author | null): string {
           <div class="article-toolbar"><nav class="breadcrumb" id="breadcrumb" aria-label="Breadcrumb"></nav>
             <button class="copy-page" id="copy-page" type="button" data-copy="" title="Copy page link">${icon("copy", 14)}<span>Copy link</span></button></div>
           ${overview(url, TOOL_DOCS.length)}
+          ${architecture()}
           ${connect(url)}
           ${apps()}
           ${agentSkills()}
