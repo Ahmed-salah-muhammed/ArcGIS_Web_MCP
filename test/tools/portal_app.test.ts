@@ -1,10 +1,13 @@
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { autoWidgets, chartGuides, correspondingField, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
 import { gridLayout } from "../../src/tools/portal_app/exb-build";
 import { arcadeTest, filterSql } from "../../src/tools/portal_app/filters";
 import { formFor, inputFor } from "../../src/tools/portal_app/fieldmaps";
 import { app } from "../../src/tools/portal_app/handler";
+import { tool } from "../../src/tools/portal_app";
+import { APP_KINDS } from "../../src/tools/portal_app/types";
 import { templateName } from "../../src/tools/portal_app/instant";
 import { mercator, placement } from "../../src/tools/portal_app/storymap";
 import { fakeCtx, ID, ID2, silence, SVC, USER } from "../helpers";
@@ -1103,9 +1106,26 @@ describe("portal_app: Experience Builder Developer Edition", () => {
 		await expect(app(ctx, { kind: "exb_developer", redirect_uris: ["localhost"] })).rejects.toThrow(/not a redirect URL/);
 	});
 
-	it("kind is required, and only some kinds have templates", async () => {
-		const { ctx } = fakeCtx({});
+	it("kind is required, and action=templates answers every kind with its guide", async () => {
+		const { ctx, calls } = fakeCtx({});
 		await expect(app(ctx, {} as any)).rejects.toThrow(/kind must be one of/);
-		await expect(app(ctx, { action: "templates", kind: "survey" })).rejects.toThrow(/no templates/);
+		for (const kind of APP_KINDS.filter((k) => k !== "instant")) {
+			const out: any = await app(ctx, { action: "templates", kind });
+			expect(out.guide.create.length).toBeGreaterThan(40);
+		}
+		expect(calls).toHaveLength(0); // the guides are text: no request is spent on them
+		const survey: any = await app(ctx, { action: "templates", kind: "survey" });
+		expect(survey).toMatchObject({ kind: "survey", templates: null });
+		expect(survey.guide.create).toContain("geopoint");
+		const dash: any = await app(ctx, { action: "templates", kind: "dashboard" });
+		expect(dash.widgets.indicator).toContain("compare_to");
+		expect(dash.guide.several_layers).toContain("links = [{from, to}]");
+		expect(dash.guide.widget_details).toContain("billboard");
+	});
+
+	it("the description sent in every conversation stays short; the detail is in the guides", () => {
+		expect(tool.description.length).toBeLessThan(1200);
+		expect(tool.description).toContain("FIRST call action=templates");
+		expect(JSON.stringify(z.toJSONSchema(tool.schema)).length).toBeLessThan(12500);
 	});
 });

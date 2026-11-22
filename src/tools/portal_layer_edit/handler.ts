@@ -1,10 +1,13 @@
 /**
  * portal_layer_edit: change layer data: edit (applyEdits, batched, every result checked, dry_run diff) |
- * calculate | truncate. Deletes, calculate and truncate need confirm.
+ * calculate | truncate | append (rows of an uploaded file item, for loads past the edit limit; optional upsert).
+ * Deletes, calculate, truncate and append need confirm.
  */
 import { adminUrl, ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
-import { isHosted, resolveLayerUrl } from "../shared/lookup";
+import { itemCard } from "../shared/format";
+import { pollJob } from "../shared/jobs";
+import { base, getItem, isHosted, requireAllowed, resolveLayerUrl } from "../shared/lookup";
 import { audit, MAX_EDITS, requireConfirm } from "../shared/safety";
 
 const MAX_BATCHES = 30; // the Workers free plan allows 50 subrequests per call
@@ -24,7 +27,12 @@ function chunks<T>(list: T[], size: number): T[][] {
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 export type EditArgs = {
-	action?: "edit" | "calculate" | "truncate" | "add_attachment" | "delete_attachments";
+	action?: "edit" | "calculate" | "truncate" | "append" | "add_attachment" | "delete_attachments";
+	source_item_id?: string;
+	upsert?: boolean;
+	match_field?: string;
+	update_geometry?: boolean;
+	wait?: boolean;
 	object_id?: number;
 	file_name?: string;
 	content_base64?: string;
@@ -96,6 +104,77 @@ async function attachmentEdit(ctx: Ctx, url: string, props: any, args: EditArgs)
 		failed: failed.length ? failed : null };
 }
 
+/** Item type -> the layer append operation's appendUploadFormat. */
+export const APPEND_FORMATS: Record<string, string> = { CSV: "csv", "Microsoft Excel": "excel", GeoJson: "geojson",
+	Shapefile: "shapefile", "File Geodatabase": "filegdb" };
+
+/**
+ * Appends the rows of a file item to the layer (the layer's append operation: a job on the server, so the number of
+ * rows is not bound by this Worker's request limit the way applyEdits batches are). upsert updates the rows whose
+ * match_field value already exists and inserts the rest. CSV and Excel need appendSourceInfo: the publishParameters
+ * that features/analyze returns for the item (ArcGIS API for Python: FeatureLayer.append(source_info=...)).
+ */
+async function appendFrom(ctx: Ctx, url: string, props: any, args: EditArgs) {
+	if (!props.supportsAppend) {
+		throw new ArcGISError(`'${props.name}' does not support append (hosted feature layers do); use action=edit with adds.`,
+			"unsupported");
+	}
+	if (!args.source_item_id) {
+		throw new ArcGISError("source_item_id is required: an uploaded CSV, Excel, GeoJSON, Shapefile or File Geodatabase item.",
+			"bad_argument");
+	}
+	const src = await getItem(ctx, args.source_item_id);
+	const format = APPEND_FORMATS[src.type];
+	if (!format) {
+		throw new ArcGISError(`A ${src.type} item cannot be appended; use ${Object.keys(APPEND_FORMATS).join(", ")}.`, "unsupported");
+	}
+	const supported = String(props.supportedAppendFormats ?? "").toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
+	if (supported.length && !supported.includes(format)) {
+		throw new ArcGISError(`This layer appends ${supported.join(", ")}, not ${format}.`, "unsupported");
+	}
+	const matchField = args.upsert ? args.match_field ?? props.globalIdField : undefined;
+	if (args.upsert && !matchField) {
+		throw new ArcGISError("upsert needs match_field: a field with a unique index (the layer has no global id field).",
+			"bad_argument");
+	}
+	const before = (await ctx.request(`${url}/query`, { where: "1=1", returnCountOnly: true })).count ?? null;
+	const preview = { layer: props.name, rows_now: before, source: itemCard(src, ctx.props.portal), format,
+		upsert: Boolean(args.upsert), match_field: matchField ?? null };
+	if (args.dry_run) return { dry_run: true, preview };
+	requireConfirm(args.confirm, `Appending the rows of '${src.title}' (${src.type}) to '${props.name}'`
+		+ (args.upsert ? `, updating rows whose ${matchField} already exists` : ""), preview,
+	args.upsert ? "Existing rows that match are overwritten." : undefined);
+
+	let sourceInfo: unknown;
+	if (format === "csv" || format === "excel") {
+		const analyzed = await ctx.request(`${base(ctx)}/content/features/analyze`, { itemid: src.id, filetype: format, sourceLocale: "en" });
+		sourceInfo = analyzed.publishParameters;
+	}
+	const started = await ctx.request(`${url}/append`, {
+		appendItemId: src.id, appendUploadFormat: format, appendSourceInfo: sourceInfo, upsert: Boolean(args.upsert),
+		upsertMatchingField: matchField, updateGeometry: args.update_geometry ?? true, rollbackOnFailure: true,
+	});
+	const statusUrl: string | undefined = started.statusUrl;
+	let status = statusUrl ? "processing" : started.success === false ? "failed" : "completed";
+	if (status === "failed") throw new ArcGISError(`The append did not start: ${JSON.stringify(started).slice(0, 200)}`, "append_failed");
+	if (statusUrl && args.wait !== false) {
+		requireAllowed(ctx, statusUrl);
+		status = await pollJob(ctx, { what: "The append", reserve: 2, failed: "append_failed",
+			check: async () => {
+				const st = await ctx.request(statusUrl);
+				return { status: String(st.status ?? "processing").toLowerCase(),
+					statusMessage: st.error?.description ?? st.error?.message ?? st.statusMessage };
+			} });
+	}
+	const done = status === "completed";
+	const after = done ? (await ctx.request(`${url}/query`, { where: "1=1", returnCountOnly: true })).count ?? null : null;
+	audit(ctx.props, { tool: "portal_layer_edit", action: "append", target: url, ok: true,
+		details: { source: src.id, format, upsert: Boolean(args.upsert), status, before, after } });
+	return { layer: props.name, source_item_id: src.id, format, upsert: Boolean(args.upsert), rows_before: before, rows_after: after,
+		status: done ? "completed" : `still ${status}`,
+		...(done ? {} : { status_url: statusUrl, check: "portal_rest GET status_url shows the job; then portal_layer_query action=count" }) };
+}
+
 export async function edit(ctx: Ctx, args: EditArgs) {
 	const action = args.action ?? "edit";
 	const url = await resolveLayerUrl(ctx, args.target, args.layer ?? 0);
@@ -129,9 +208,10 @@ export async function edit(ctx: Ctx, args: EditArgs) {
 	}
 
 	if (action === "add_attachment" || action === "delete_attachments") return attachmentEdit(ctx, url, props, args);
+	if (action === "append") return appendFrom(ctx, url, props, args);
 
 	if (action !== "edit") {
-		throw new ArcGISError("action must be edit | calculate | truncate | add_attachment | delete_attachments.", "bad_action");
+		throw new ArcGISError("action must be edit | calculate | truncate | append | add_attachment | delete_attachments.", "bad_action");
 	}
 	const adds = asFeatures(args.adds);
 	const updates = asFeatures(args.updates);

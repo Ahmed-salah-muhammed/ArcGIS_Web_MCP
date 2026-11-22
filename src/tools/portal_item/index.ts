@@ -1,15 +1,15 @@
 import { z } from "zod";
 import { confirm, defineTool, DESTRUCTIVE } from "../shared/mcp";
-import { EXPORT_FORMATS, exportItem, item, itemWrite, suggestMetadata } from "./handler";
+import { EXPORT_FORMATS, exportItem, item, itemWrite, jobStatus, suggestMetadata } from "./handler";
 
 export const tool = defineTool({
 	name: "portal_item",
 	title: "Item: read and manage",
-	description: "One item by id: get (card, sharing level, tags, is_hosted/is_view, every layer/table of a service) | data (its JSON) | update (properties: title, snippet, description, tags...; and/or data JSON) | move (folder name/id; omit for root) | protect | unprotect | delete (confirm; refuses protected items; delete views before their source layer) | dependencies (what it uses / what uses it) | export (a feature layer to csv|geojson|shapefile|fgdb|excel|geopackage|kml as a new item, with a download link) | suggest_metadata (summary, description and tags inferred from its layers, fields and geometry; apply=true writes them).",
+	description: "One item by id: get (card, sharing level, tags, is_hosted/is_view, every layer/table of a service) | data (its JSON) | update (properties: title, snippet, description, tags...; and/or data JSON) | move (folder name/id; omit for root) | protect | unprotect | delete (confirm; refuses protected items; delete views before their source layer) | dependencies (what it uses / what uses it) | export (a feature layer to csv|geojson|shapefile|fgdb|excel|geopackage|kml as a new item, with a download link; wait=false returns at once with a job) | job_status (job_id + job_type publish|export: where a publish or export job stands; item_id = the published service or exported file) | suggest_metadata (summary, description and tags inferred from its layers, fields and geometry; apply=true writes them).",
 	schema: z.object({
 		item_id: z.string().describe("32-character item id"),
 		action: z.enum(["get", "data", "update", "move", "protect", "unprotect", "delete", "dependencies", "export",
-			"suggest_metadata"]).optional().describe("Default get"),
+			"job_status", "suggest_metadata"]).optional().describe("Default get"),
 		properties: z.record(z.string(), z.unknown()).optional().describe("For update"),
 		data: z.unknown().optional().describe("For update: the item's JSON (e.g. a web map)"),
 		folder: z.string().optional().describe("For move: folder name or id; omit for root"),
@@ -18,6 +18,9 @@ export const tool = defineTool({
 		format: z.enum(Object.keys(EXPORT_FORMATS) as [string, ...string[]]).optional().describe("For export"),
 		title: z.string().optional().describe("For export: title of the new item"),
 		layers: z.array(z.number().int().min(0)).optional().describe("For export: layer ids to include; default all"),
+		wait: z.boolean().optional().describe("For export: default true, wait for the job (up to a minute)"),
+		job_id: z.string().optional().describe("For job_status: the job id a publish or export returned"),
+		job_type: z.enum(["publish", "export"]).optional().describe("For job_status; default publish"),
 		apply: z.boolean().optional().describe("For suggest_metadata: write the suggestion to the item"),
 		confirm,
 	}),
@@ -26,6 +29,7 @@ export const tool = defineTool({
 		const action = args.action ?? "get";
 		if (action === "get" || action === "data") return item(ctx, { ...args, action });
 		if (action === "export") return exportItem(ctx, args);
+		if (action === "job_status") return jobStatus(ctx, args);
 		if (action === "suggest_metadata") return suggestMetadata(ctx, args);
 		return itemWrite(ctx, { ...args, action });
 	},

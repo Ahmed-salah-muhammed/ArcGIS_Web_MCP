@@ -42,6 +42,7 @@ import {
 	type Message,
 	MESSAGE_HEADERS,
 	messagePage,
+	VERSION,
 } from "../pages";
 
 type Bindings = Env & { OAUTH_PROVIDER: OAuthHelpers };
@@ -58,20 +59,44 @@ export function portalUrl(env: Pick<Env, "ARCGIS_PORTAL_URL">): string {
 	return (env.ARCGIS_PORTAL_URL || "https://www.arcgis.com").replace(/\/+$/, "");
 }
 
-app.get("/", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/overview", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/architecture", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/connect", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/apps", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/agent-skills", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/tools", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/security", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/limits", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/contact", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/about", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/tools/:tool", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/tools-*", (c) => new Response(homePage(new URL(c.req.url).origin, AUTHOR), { headers: HOME_HEADERS }));
-app.get("/home.css", () => new Response(HOME_CSS, { headers: HOME_CSS_HEADERS }));
+/** A short fingerprint of a page (FNV-1a over its text, plus its length): what its ETag is made of. */
+function etagOf(text: string): string {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+	return `"${VERSION}-${(h >>> 0).toString(36)}-${text.length.toString(36)}"`;
+}
+
+/** The body, or 304 without one when the browser already holds this exact version (compression makes the tag weak). */
+function revalidated(request: Request, body: string, etag: string, headers: Record<string, string>): Response {
+	const held = (request.headers.get("If-None-Match") ?? "").split(",").map((t) => t.trim().replace(/^W\//, ""));
+	const all = { ...headers, ETag: etag };
+	return held.includes(etag) ? new Response(null, { status: 304, headers: all }) : new Response(body, { headers: all });
+}
+
+/**
+ * The documentation app is one page for every route and every visitor of an origin: about 300 KB of HTML that used to
+ * be rebuilt for each request. It is built once per origin for the life of the isolate and kept with its ETag.
+ */
+const docsPages = new Map<string, { html: string; etag: string }>();
+function docsPage(request: Request): Response {
+	const origin = new URL(request.url).origin;
+	let page = docsPages.get(origin);
+	if (!page) {
+		const html = homePage(origin, AUTHOR);
+		page = { html, etag: etagOf(html) };
+		if (docsPages.size >= 8) docsPages.clear(); // a Worker answers on a handful of hostnames
+		docsPages.set(origin, page);
+	}
+	return revalidated(request, page.html, page.etag, HOME_HEADERS);
+}
+
+/** Every documentation route serves the same single-page app, which shows the page its path names. */
+export const DOC_ROUTES = ["/", "/overview", "/architecture", "/connect", "/apps", "/agent-skills", "/tools", "/security",
+	"/limits", "/contact", "/about", "/tools/:tool", "/tools-*"];
+for (const route of DOC_ROUTES) app.get(route, (c) => docsPage(c.req.raw));
+
+const CSS_ETAG = etagOf(HOME_CSS);
+app.get("/home.css", (c) => revalidated(c.req.raw, HOME_CSS, CSS_ETAG, HOME_CSS_HEADERS));
 app.post("/contact", (c) => handleContact(c.req.raw, c.env as Bindings & ContactEnv));
 
 function statusPage(status: number, message: Message, headers: Record<string, string> = {}) {

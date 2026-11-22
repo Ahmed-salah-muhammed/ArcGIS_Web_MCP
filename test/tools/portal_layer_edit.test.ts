@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { edit } from "../../src/tools/portal_layer_edit/handler";
-import { fakeCtx, props, type Route, silence, SVC } from "../helpers";
+import { fakeCtx, ID, props, type Route, silence, SVC } from "../helpers";
 
 const layerRoutes = (extra: Record<string, Route> = {}) => ({
 	[`${SVC}/0`]: () => ({ name: "pts", objectIdField: "OBJECTID", globalIdField: "GlobalID", geometryType: "esriGeometryPoint",
@@ -15,6 +15,85 @@ const layerRoutes = (extra: Record<string, Route> = {}) => ({
 		deleteResults: String(p.deletes ?? "").split(",").filter(Boolean).map(() => ({ success: true })),
 	}),
 	...extra,
+});
+
+// Shapes from Esri's REST reference for the layer Append operation and the ArcGIS API for Python's FeatureLayer.append
+// (appendSourceInfo = the publishParameters of features/analyze, for CSV and Excel); not yet run against a live layer.
+describe("portal_layer_edit: append", () => {
+	const JOB = `${SVC}/0/append/jobs/abc`;
+	const appendRoutes = (type: string, statuses: string[], layer: Record<string, unknown> = {}) => {
+		let count = 3;
+		return {
+			[`${SVC}/0`]: () => ({ name: "pts", objectIdField: "OBJECTID", globalIdField: "GlobalID", supportsAppend: true,
+				supportedAppendFormats: "shapefile,geojson,csv,featureCollection,excel,filegdb", ...layer }),
+			[`${SVC}/0/query`]: () => ({ count }),
+			[`/content/items/${ID}`]: () => ({ id: ID, title: "more points", type, owner: "jdoe_gis" }),
+			"/content/features/analyze": () => ({ publishParameters: { locationType: "coordinates", latitudeFieldName: "LAT" } }),
+			[`${SVC}/0/append`]: () => ({ statusUrl: JOB }),
+			[JOB]: () => {
+				const status = statuses.shift() ?? "Completed";
+				if (status === "Completed") count = 10;
+				return { status, layerName: "pts" };
+			},
+		};
+	};
+
+	it("asks first with a preview, then starts the job, waits for it and reports the rows", async () => {
+		silence();
+		const { ctx, calls, urls } = fakeCtx(appendRoutes("CSV", ["Processing", "Completed"]));
+		await expect(edit(ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID })).rejects.toMatchObject({
+			code: "confirm_required", preview: { layer: "pts", rows_now: 3, format: "csv", upsert: false } });
+		expect(urls().some((u) => u.endsWith("/append"))).toBe(false);
+		const dry: any = await edit(ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID, dry_run: true });
+		expect(dry).toMatchObject({ dry_run: true, preview: { source: { id: ID } } });
+
+		const out: any = await edit(ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID, confirm: true });
+		expect(calls.find((c) => c.url.endsWith("/append"))!.params).toEqual({ appendItemId: ID, appendUploadFormat: "csv",
+			appendSourceInfo: { locationType: "coordinates", latitudeFieldName: "LAT" }, upsert: false, upsertMatchingField: undefined,
+			updateGeometry: true, rollbackOnFailure: true });
+		expect(calls.filter((c) => c.url === JOB)).toHaveLength(2);
+		expect(out).toMatchObject({ layer: "pts", format: "csv", rows_before: 3, rows_after: 10, status: "completed" });
+	});
+
+	it("upsert matches on the global id unless a field is given; other files need no analyze", async () => {
+		silence();
+		const { ctx, calls, urls } = fakeCtx(appendRoutes("GeoJson", []));
+		await edit(ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID, upsert: true, confirm: true });
+		expect(calls.find((c) => c.url.endsWith("/append"))!.params).toMatchObject({ appendUploadFormat: "geojson", upsert: true,
+			upsertMatchingField: "GlobalID", appendSourceInfo: undefined });
+		expect(urls().some((u) => u.endsWith("/analyze"))).toBe(false);
+		const keyed = fakeCtx(appendRoutes("Shapefile", []));
+		await edit(keyed.ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID, upsert: true, match_field: "ASSET_ID", confirm: true });
+		expect(keyed.calls.find((c) => c.url.endsWith("/append"))!.params.upsertMatchingField).toBe("ASSET_ID");
+	});
+
+	it("wait=false returns the job's status URL; a failed job is an error", async () => {
+		silence();
+		const later = fakeCtx(appendRoutes("GeoJson", ["Processing"]));
+		const out: any = await edit(later.ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID, confirm: true, wait: false });
+		expect(out).toMatchObject({ status: "still processing", status_url: JOB, rows_after: null });
+		expect(later.calls.some((c) => c.url === JOB)).toBe(false);
+		const failing = fakeCtx({ ...appendRoutes("GeoJson", []), [JOB]: () => ({ status: "Failed", error: { description: "bad geometry" } }) });
+		await expect(edit(failing.ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID, confirm: true }))
+			.rejects.toMatchObject({ code: "append_failed", message: "The append failed: bad geometry" });
+	});
+
+	it("refuses what the layer cannot take, before asking or writing", async () => {
+		const noAppend = fakeCtx(appendRoutes("CSV", [], { supportsAppend: false }));
+		await expect(edit(noAppend.ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID, confirm: true }))
+			.rejects.toMatchObject({ code: "unsupported" });
+		const webMap = fakeCtx(appendRoutes("Web Map", []));
+		await expect(edit(webMap.ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID, confirm: true }))
+			.rejects.toThrow(/A Web Map item cannot be appended/);
+		const narrow = fakeCtx(appendRoutes("CSV", [], { supportedAppendFormats: "geojson,shapefile" }));
+		await expect(edit(narrow.ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID, confirm: true }))
+			.rejects.toThrow(/appends geojson, shapefile, not csv/);
+		const noKey = fakeCtx(appendRoutes("GeoJson", [], { globalIdField: "" }));
+		await expect(edit(noKey.ctx, { target: `${SVC}/0`, action: "append", source_item_id: ID, upsert: true, confirm: true }))
+			.rejects.toThrow(/upsert needs match_field/);
+		await expect(edit(noKey.ctx, { target: `${SVC}/0`, action: "append" })).rejects.toThrow(/source_item_id is required/);
+		for (const c of [noAppend, webMap, narrow, noKey]) expect(c.urls().some((u) => u.endsWith("/append"))).toBe(false);
+	});
 });
 
 describe("portal_layer_edit", () => {

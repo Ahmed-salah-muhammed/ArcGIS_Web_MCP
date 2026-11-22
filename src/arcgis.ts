@@ -45,6 +45,30 @@ export class ArcGISError extends Error {
 
 export type Fetch = typeof fetch;
 
+/** How long one ArcGIS request may take before the call gives up on it (uploads get longer: they carry a file). */
+export const REQUEST_TIMEOUT_MS = 30_000;
+export const UPLOAD_TIMEOUT_MS = 90_000;
+
+/**
+ * Runs one fetch (and the reading of its body) under a deadline, so a service that never answers ends as a clear
+ * "timeout" error instead of holding the tool call until the MCP client gives up.
+ */
+export async function withTimeout<T>(url: string, ms: number, send: (signal: AbortSignal) => Promise<T>): Promise<T> {
+	try {
+		return await send(AbortSignal.timeout(ms));
+	} catch (e) {
+		if (e instanceof Error && !(e instanceof ArcGISError) && (e.name === "TimeoutError" || e.name === "AbortError")) {
+			let host = "ArcGIS";
+			try {
+				host = new URL(url).hostname;
+			} catch { /* keep the generic name */ }
+			throw new ArcGISError(`${host} did not answer within ${Math.round(ms / 1000)} s. A read can simply be tried again; `
+				+ "after a write, check what changed before repeating it.", "timeout", 504);
+		}
+		throw e;
+	}
+}
+
 export function sharingUrl(portal: string): string {
 	return `${portal.replace(/\/+$/, "")}/sharing/rest`;
 }
@@ -89,17 +113,21 @@ export function authorizeUrl(opts: {
 }
 
 async function tokenCall(portal: string, form: Record<string, string>, fetchImpl: Fetch): Promise<TokenResponse> {
-	const res = await fetchImpl(`${sharingUrl(portal)}/oauth2/token`, {
-		method: "POST",
-		headers: { "Content-Type": "application/x-www-form-urlencoded" },
-		body: new URLSearchParams({ ...form, f: "json" }).toString(),
+	const url = `${sharingUrl(portal)}/oauth2/token`;
+	const { res, body } = await withTimeout(url, REQUEST_TIMEOUT_MS, async (signal) => {
+		const res = await fetchImpl(url, {
+			method: "POST",
+			headers: { "Content-Type": "application/x-www-form-urlencoded" },
+			body: new URLSearchParams({ ...form, f: "json" }).toString(),
+			signal,
+		});
+		try {
+			return { res, body: (await res.json()) as any };
+		} catch (e) {
+			if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) throw e;
+			throw new ArcGISError(`Token endpoint returned HTTP ${res.status} without JSON.`, "token_error", res.status);
+		}
 	});
-	let body: any;
-	try {
-		body = await res.json();
-	} catch {
-		throw new ArcGISError(`Token endpoint returned HTTP ${res.status} without JSON.`, "token_error", res.status);
-	}
 	if (body?.error || !body?.access_token) {
 		const err = typeof body?.error === "object" ? body.error : body ?? {};
 		const message = err.error_description || err.message || err.error || `HTTP ${res.status}`;
@@ -141,6 +169,7 @@ function errorCode(code: number): string {
 	if (code === 403) return "forbidden";
 	if (code === 400) return "bad_request";
 	if (code === 404) return "not_found";
+	if (code === 429) return "rate_limited";
 	return "arcgis_error";
 }
 
@@ -160,11 +189,12 @@ export async function arcgisRequest(
 		form.set(key, typeof value === "object" ? JSON.stringify(value) : String(value));
 	}
 	if (token) form.set("token", token);
-	return parseArcGIS(await fetchImpl(url, {
+	return withTimeout(url, REQUEST_TIMEOUT_MS, async (signal) => parseArcGIS(await fetchImpl(url, {
 		method: "POST",
 		headers: { "Content-Type": "application/x-www-form-urlencoded" },
 		body: form.toString(),
-	}));
+		signal,
+	})));
 }
 
 async function parseArcGIS(res: Response): Promise<any> {
@@ -173,7 +203,8 @@ async function parseArcGIS(res: Response): Promise<any> {
 	try {
 		body = JSON.parse(text);
 	} catch {
-		throw new ArcGISError(`Not a JSON response (HTTP ${res.status}).`, res.ok ? "not_json" : "http_error", res.status, text);
+		throw new ArcGISError(`Not a JSON response (HTTP ${res.status}).`,
+			res.ok ? "not_json" : res.status === 429 ? "rate_limited" : "http_error", res.status, text);
 	}
 	if (body && typeof body === "object" && body.error) {
 		const code = Number(body.error.code) || res.status;
@@ -199,7 +230,7 @@ export async function arcgisGet(url: string, params: Record<string, unknown>, to
 	}
 	const headers: Record<string, string> = {};
 	if (token) headers["X-Esri-Authorization"] = `Bearer ${token}`;
-	return parseArcGIS(await fetchImpl(u.href, { method: "GET", headers }));
+	return withTimeout(url, REQUEST_TIMEOUT_MS, async (signal) => parseArcGIS(await fetchImpl(u.href, { method: "GET", headers, signal })));
 }
 
 /** A multipart file; `field` is the form field ArcGIS expects ("file" for addItem, "attachment" for attachments). */
@@ -216,7 +247,7 @@ export async function arcgisUpload(url: string, params: Record<string, unknown>,
 	}
 	if (token) form.set("token", token);
 	form.set(file.field ?? "file", new Blob([file.content], { type: file.type }), file.name);
-	return parseArcGIS(await fetchImpl(url, { method: "POST", body: form }));
+	return withTimeout(url, UPLOAD_TIMEOUT_MS, async (signal) => parseArcGIS(await fetchImpl(url, { method: "POST", body: form, signal })));
 }
 
 /** .../rest/services/X/FeatureServer[/N] -> .../rest/admin/services/X/FeatureServer[/N] (hosted services). */

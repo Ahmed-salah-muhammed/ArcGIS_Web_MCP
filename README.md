@@ -72,12 +72,14 @@ Add this to the client's MCP config ([Node.js](https://nodejs.org) required), th
 | `portal_whoami` | Who is signed in: user, role, organization, what the account can do |
 | `portal_search` | Search items by text, type, owner or tags |
 | `portal_geocode` | Address to coordinates and back, with your organization's geocoder |
-| `portal_item` | Read, update, move, protect or delete an item; dependencies; export to CSV, GeoJSON, File Geodatabase...; automatic summary and tags |
+| `portal_geometry` | Project, buffer, measure areas and lengths, distance between geometries (no credits) |
+| `portal_audit` | Read-only review: sharing levels, public layers anyone can edit, unused items, credits and storage |
+| `portal_item` | Read, update, move, protect or delete an item; dependencies; export to CSV, GeoJSON, File Geodatabase...; publish/export job status; automatic summary and tags |
 | `portal_folders` | List, create and delete folders |
 | `portal_share` | Share with your organization, groups or everyone |
 | `portal_publish` | Publish CSV, GeoJSON or an uploaded file as a hosted feature layer |
-| `portal_layer_query` | Describe a layer, query rows, count, statistics, attachments and related records; filter by place (near a point, inside an area) |
-| `portal_layer_edit` | Add, update and delete features; calculate fields; add and delete attachments |
+| `portal_layer_query` | Describe a layer, query rows (or GeoJSON), count, statistics, distinct values, extent, attachments and related records; filter by place (near a point, inside an area) |
+| `portal_layer_edit` | Add, update and delete features; calculate fields; append an uploaded file's rows (with upsert); add and delete attachments |
 | `portal_layer_schema` | Fields, capabilities, styles, labels, attachments and filtered views |
 | `portal_map` | Create and edit web maps: layers, popups, styles, filters, basemaps |
 | `portal_arcade` | Arcade expressions: ready-made templates, a check against the layer's fields, popups, labels and Field Maps form rules |
@@ -87,6 +89,9 @@ Add this to the client's MCP config ([Node.js](https://nodejs.org) required), th
 | `portal_batch` | Up to 10 tool calls in one request, each reusing earlier results |
 
 Deleting, bulk edits, public sharing and anything that spends credits ask for your confirmation first.
+
+The server also offers four prompts, which MCP clients list as ready-made workflows: `publish_and_map`,
+`build_dashboard`, `explore_layer` and `content_audit`.
 
 ## Installing the Experience Builder widget skill
 
@@ -155,7 +160,15 @@ Settings in `wrangler.jsonc` (`vars`):
 | `ARCGIS_PORTAL_URL` | ArcGIS Online by default; an Enterprise portal works too, e.g. `https://gis.example.com/portal` |
 | `ARCGIS_EXTRA_HOSTS` | Extra hosts allowed to receive the user's token (e.g. federated servers or a geocoder on another host) |
 | `MAX_SUBREQUESTS` | Requests to ArcGIS one tool call may make: 50 on Cloudflare's free plan, more on a paid plan |
+| `STRUCTURED_CONTENT` | `"true"` also returns every tool result as `structuredContent` next to its JSON text; off by default, because a client that passes both to the model doubles what each result costs |
 | `CONTACT_FROM` | Sender of the contact form's emails |
+
+`ratelimits` in `wrangler.jsonc` caps each signed-in user at 120 MCP requests a minute (one tool call is one
+request); change `limit`, or remove the block to turn the cap off.
+
+Every tool call writes one line to the Worker's logs (`npx wrangler tail`, or Workers Logs in the dashboard) with the
+tool, the action, whether it worked, how long it took and how many requests it made to ArcGIS. Arguments are never
+logged.
 
 A fork changes `name` and removes the KV `id` in `wrangler.jsonc`; without a contact form, it also removes
 `RESEND_API_KEY` and `CONTACT_TO` from `secrets.required`.

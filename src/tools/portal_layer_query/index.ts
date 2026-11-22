@@ -1,18 +1,21 @@
 import { z } from "zod";
 import { defineTool, layer, READ_ONLY, target } from "../shared/mcp";
-import { DISTANCE_UNITS, layerQuery, MAX_ROWS, SPATIAL_RELS } from "./handler";
+import { DISTANCE_UNITS, layerQuery, MAX_MAX_CHARS, MAX_ROWS, SPATIAL_RELS } from "./handler";
 
 export const tool = defineTool({
 	name: "portal_layer_query",
 	title: "Query a feature layer",
-	description: 'Read a feature layer or table: describe (fields + domains, capabilities, count, view filter, relationships) | query (paged rows: limit <= 1000, offset/next_offset; dates as ISO UTC; geometry only if return_geometry) | count | stats (["sum:POP","avg:INCOME"], group_by) | attachments (object_ids or where: names, types, sizes, URLs) | related (object_ids + relationship_id or name: the related records). query/count/stats filter by place too: geometry = [lon, lat] point, [xmin, ymin, xmax, ymax] box or Esri geometry JSON (WGS84 unless geometry_sr), spatial_rel, and distance + units for "within N km of".',
+	description: 'Read a feature layer or table: describe (fields + domains, capabilities, count, view filter, relationships) | query (paged rows: limit <= 1000, offset/next_offset; dates as ISO UTC; geometry only if return_geometry; format=geojson returns a GeoJSON FeatureCollection) | count | stats (["sum:POP","avg:INCOME"], group_by) | distinct (fields: their distinct values) | extent (count + bounding box of what matches) | attachments (object_ids or where: names, types, sizes, URLs) | related (object_ids + relationship_id or name: the related records). query/count/stats/distinct/extent filter by place too: geometry = [lon, lat] point, [xmin, ymin, xmax, ymax] box or Esri geometry JSON (WGS84 unless geometry_sr), spatial_rel, and distance + units for "within N km of". Rows are also capped by size (max_chars): a truncated answer says so and next_offset continues it.',
 	schema: z.object({
 		target,
-		action: z.enum(["describe", "query", "count", "stats", "attachments", "related"]).optional().describe("Default query"),
+		action: z.enum(["describe", "query", "count", "stats", "distinct", "extent", "attachments", "related"]).optional().describe("Default query"),
 		layer,
 		where: z.string().optional().describe("SQL where clause; default 1=1"),
-		fields: z.array(z.string()).optional().describe("Fields to return; default all"),
-		limit: z.number().int().min(1).max(MAX_ROWS).optional().describe("Default 50"),
+		fields: z.array(z.string()).optional().describe("Fields to return; default all. distinct: the field(s) to list"),
+		limit: z.number().int().min(1).max(MAX_ROWS).optional().describe("Default 50 (distinct: 200)"),
+		format: z.enum(["rows", "geojson"]).optional().describe("query: rows (default) or a GeoJSON FeatureCollection in WGS84"),
+		max_chars: z.number().int().min(1000).max(MAX_MAX_CHARS).optional()
+			.describe("Size cap of the rows returned; default 40000. What does not fit is the next page"),
 		offset: z.number().int().min(0).optional(),
 		order_by: z.string().optional().describe("e.g. POP DESC"),
 		return_geometry: z.boolean().optional(),

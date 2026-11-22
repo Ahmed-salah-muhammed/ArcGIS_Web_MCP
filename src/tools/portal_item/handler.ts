@@ -6,6 +6,7 @@
 import { ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
 import { itemCard, truncate } from "../shared/format";
+import { type JobRef, pollJob, stillRunning } from "../shared/jobs";
 import { base, getItem, requireAllowed, requireId, resolveFolder, serviceLayers, userPath } from "../shared/lookup";
 import { layerMetadata, webmapDescription } from "../shared/metadata";
 import { audit, requireConfirm } from "../shared/safety";
@@ -118,7 +119,8 @@ export const EXPORT_FORMATS: Record<string, string> = {
  * Export a feature layer item to a file item in the signed-in user's content (content/users/<me>/export, a job
  * polled at items/<id>/status). The owner can always export; others need the layer's "Allow others to export".
  */
-export async function exportItem(ctx: Ctx, args: { item_id: string; format?: string; title?: string; layers?: number[] }) {
+export async function exportItem(ctx: Ctx, args: { item_id: string; format?: string; title?: string; layers?: number[];
+	wait?: boolean }) {
 	const id = requireId(args.item_id);
 	const format = EXPORT_FORMATS[String(args.format ?? "").toLowerCase()];
 	if (!format) throw new ArcGISError(`format must be ${Object.keys(EXPORT_FORMATS).join(" | ")}.`, "bad_argument");
@@ -132,29 +134,47 @@ export async function exportItem(ctx: Ctx, args: { item_id: string; format?: str
 		exportParameters: args.layers?.length ? { layers: args.layers.map((l) => ({ id: l })) } : undefined,
 	});
 	if (!res.exportItemId) throw new ArcGISError(`The export did not start: ${JSON.stringify(res).slice(0, 200)}`, "export_failed");
-	const wait = ctx.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-	let status = "processing";
-	for (let i = 0; i < 25 && res.jobId && status !== "completed" && (ctx.budget?.left() ?? Infinity) > 1; i++) {
-		await wait(2000);
-		const st = await ctx.request(`${userPath(ctx)}/items/${res.exportItemId}/status`, { jobId: res.jobId, jobType: "export" });
-		status = st.status;
-		if (status === "failed") throw new ArcGISError(`The export failed: ${st.statusMessage ?? "no message"}`, "export_failed");
-	}
+	const status = !res.jobId ? "completed" : args.wait === false ? "processing" : await pollJob(ctx, {
+		what: "The export", reserve: 1, failed: "export_failed",
+		check: () => ctx.request(`${userPath(ctx)}/items/${res.exportItemId}/status`, { jobId: res.jobId, jobType: "export" }),
+	});
 	const out = await getItem(ctx, res.exportItemId);
-	audit(ctx.props, { tool: "portal_item", action: "export", target: id, ok: status === "completed", details: { format, out: out.id } });
+	audit(ctx.props, { tool: "portal_item", action: "export", target: id, ok: true,
+		details: { format, out: out.id, status } });
 	return { source_item_id: id, export_item: itemCard(out, ctx.props.portal), format,
-		status: status === "completed" ? "completed" : `still ${status} (check later with portal_item action=get)`,
+		...(status === "completed" ? { status }
+			: stillRunning(status, { item_id: res.exportItemId, job_id: res.jobId, job_type: "export" })),
 		download_url: `${base(ctx)}/content/items/${out.id}/data`,
 		download_note: "Open the item page while signed in to ArcGIS and click Download, or fetch download_url with a token." };
+}
+
+// --- jobs -----------------------------------------------------------------------------------------------
+
+/**
+ * Where a publish or export job stands (content/users/<me>/items/<id>/status): what a call that stopped waiting, or
+ * was started with wait=false, is followed up with. The item is the published service or the exported file.
+ */
+export async function jobStatus(ctx: Ctx, args: { item_id: string; job_id?: string; job_type?: string }) {
+	const id = requireId(args.item_id);
+	const jobType = (args.job_type ?? "publish").toLowerCase();
+	if (jobType !== "publish" && jobType !== "export") throw new ArcGISError("job_type must be publish | export.", "bad_argument");
+	if (!args.job_id) throw new ArcGISError("job_id is required: the job a publish or export answered with.", "bad_argument");
+	const st = await ctx.request(`${userPath(ctx)}/items/${id}/status`, { jobId: args.job_id, jobType });
+	const status = String(st.status ?? "unknown");
+	const job: JobRef = { item_id: id, job_id: args.job_id, job_type: jobType };
+	const done = status === "completed";
+	return { job, status, message: st.statusMessage || null, done,
+		...(done ? { item: itemCard(await getItem(ctx, id), ctx.props.portal) } : {}),
+		next: done ? (jobType === "export" ? `download: ${base(ctx)}/content/items/${id}/data` : "portal_item action=get lists its layers")
+			: status === "failed" ? "the job failed: start it again" : "not finished: ask again in a few seconds" };
 }
 
 // --- metadata -------------------------------------------------------------------------------------------
 
 async function layerFacts(ctx: Ctx, url: string) {
 	requireAllowed(ctx, url);
-	const p = await ctx.request(url);
-	const count = await ctx.request(`${url}/query`, { where: "1=1", returnCountOnly: true }).then((r: any) => r.count ?? null,
-		() => null);
+	const [p, count] = await Promise.all([ctx.request(url),
+		ctx.request(`${url}/query`, { where: "1=1", returnCountOnly: true }).then((r: any) => r.count ?? null, () => null)]);
 	return { name: p.name as string, geometry: p.geometryType as string | undefined,
 		fields: ((p.fields ?? []) as any[]).map((f) => String(f.name)), count };
 }

@@ -58,6 +58,17 @@ describe("portal_publish", () => {
 		expect(urls().some((u) => u.endsWith("/publish"))).toBe(false);
 	});
 
+	it("wait=false starts the job and returns it without polling", async () => {
+		silence();
+		const { ctx, calls } = fakeCtx(routes(["processing", "completed"]));
+		const out: any = await publish(ctx, { title: "t", csv_text: "NAME,LAT,LON\nA,30,31", latitude_field: "LAT", longitude_field: "LON",
+			wait: false });
+		expect(calls.filter((c) => c.url.endsWith("/status"))).toHaveLength(0);
+		expect(out.status).toMatch(/^still processing \(check it with portal_item action=job_status/);
+		expect(out.job).toEqual({ item_id: ID2, job_id: expect.any(String), job_type: "publish" });
+		expect(out.layers).toEqual([]);
+	});
+
 	it("validates the source before any request", async () => {
 		const { ctx, calls } = fakeCtx({});
 		await expect(publish(ctx, { title: "t" })).rejects.toMatchObject({ code: "bad_argument" });

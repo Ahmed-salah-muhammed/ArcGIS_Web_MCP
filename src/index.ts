@@ -12,6 +12,8 @@ import { env } from "cloudflare:workers";
 import { type ArcGISProps, ArcGISError, refreshAccessToken } from "./arcgis";
 import { ArcGISHandler } from "./auth/handler";
 import { MCP_INSTRUCTIONS, MCP_SERVER_INFO } from "./pages";
+import { registerPrompts } from "./prompts";
+import { rateLimited } from "./rate-limit";
 import { registerTools } from "./tools";
 
 // ArcGIS authorization-code access tokens live ~30 minutes. MCP access tokens expire a little earlier, so the
@@ -32,14 +34,19 @@ function maxSubrequests(): number | undefined {
 function createServer() {
 	const server = new McpServer(MCP_SERVER_INFO, { instructions: MCP_INSTRUCTIONS });
 	const props = getMcpAuthContext()?.props as ArcGISProps | undefined;
-	if (props?.accessToken) registerTools(server, props, extraHosts(), maxSubrequests());
+	if (props?.accessToken) {
+		registerTools(server, props, extraHosts(), maxSubrequests(), { structured: String(env.STRUCTURED_CONTENT) === "true" });
+		registerPrompts(server);
+	}
 	return server;
 }
 
 const mcpHandler = createMcpHandler(createServer);
 const apiHandler = {
-	fetch(request: Request, bindings: Env, ctx: ExecutionContext) {
-		return mcpHandler(request, bindings, ctx);
+	async fetch(request: Request, bindings: Env, ctx: ExecutionContext) {
+		// the OAuth provider has already checked the token and put the grant's props on ctx
+		const refused = await rateLimited(bindings.MCP_RATE_LIMITER, (ctx as { props?: ArcGISProps }).props);
+		return refused ?? mcpHandler(request, bindings, ctx);
 	},
 } satisfies ExportedHandler<Env>;
 

@@ -26,6 +26,16 @@ export function audit(props: ArcGISProps, record: { tool: string; action: string
 		...record } }));
 }
 
+/**
+ * One JSON line per tool call, next to the audit lines: which tool and action, whether it worked, how long it took and
+ * how many requests to ArcGIS it made. This is where the server's real latency is read from (Workers Logs /
+ * `wrangler tail`). Never the arguments: they can hold the user's data.
+ */
+export function logCall(props: ArcGISProps, record: { tool: string; action: string | null; ok: boolean; code: string | null;
+	duration_ms: number; requests: number }): void {
+	console.log(JSON.stringify({ call: { time: new Date().toISOString(), user: props.username, portal: props.portal, ...record } }));
+}
+
 export const MAX_EDITS = 5000; // feature edits per portal_layer_edit call
 export const MAX_UPLOAD_CHARS = 5_000_000; // CSV / GeoJSON text accepted by portal_publish
 export const MAX_DOWNLOAD_BYTES = MAX_UPLOAD_CHARS * 4; // a url download: UTF-8 takes at most 4 bytes a character

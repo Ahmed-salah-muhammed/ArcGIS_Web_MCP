@@ -3,9 +3,10 @@
  * Verified on ArcGIS Online: a CSV added as `text` cannot be analyzed or published, so it is uploaded as a
  * multipart file; publishing returns a job that is polled until it completes.
  */
-import { ArcGISError, hostAllowed } from "../../arcgis";
+import { ArcGISError, hostAllowed, REQUEST_TIMEOUT_MS, withTimeout } from "../../arcgis";
 import { cleanup, type Ctx } from "../shared/context";
 import { itemCard } from "../shared/format";
+import { pollJob, stillRunning } from "../shared/jobs";
 import { base, getItem, resolveFolder, userPath } from "../shared/lookup";
 import { audit, GEOCODE_CREDITS_EACH, MAX_DOWNLOAD_BYTES, MAX_UPLOAD_CHARS, requireConfirm } from "../shared/safety";
 
@@ -21,6 +22,7 @@ export type PublishArgs = {
 	latitude_field?: string;
 	longitude_field?: string;
 	address_fields?: Record<string, string>;
+	wait?: boolean;
 	confirm?: boolean;
 };
 
@@ -97,9 +99,11 @@ export async function publish(ctx: Ctx, args: PublishArgs) {
 		const u = new URL(args.url);
 		if (u.protocol !== "https:") throw new ArcGISError("url must be https.", "bad_argument");
 		ctx.budget?.take();
-		const res = await fetch(u.href); // public fetch (global_fetch_strictly_public); no token is sent
-		if (!res.ok) throw new ArcGISError(`Could not download ${u.hostname}: HTTP ${res.status}`, "download_failed");
-		content = await readCapped(res, u.hostname);
+		content = await withTimeout(u.href, REQUEST_TIMEOUT_MS, async (signal) => {
+			const res = await fetch(u.href, { signal }); // public fetch (global_fetch_strictly_public); no token is sent
+			if (!res.ok) throw new ArcGISError(`Could not download ${u.hostname}: HTTP ${res.status}`, "download_failed");
+			return readCapped(res, u.hostname);
+		});
 		kind = /\.(geo)?json(\?|$)/i.test(u.pathname) || content.trimStart().startsWith("{") ? "geojson" : "csv";
 	}
 	if (content !== null && content.length > MAX_UPLOAD_CHARS) {
@@ -174,19 +178,14 @@ export async function publish(ctx: Ctx, args: PublishArgs) {
 		await dropUpload();
 		throw new ArcGISError(`Publishing failed: ${JSON.stringify(svc.error ?? svc).slice(0, 300)}`, "publish_failed");
 	}
-	const wait = ctx.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-	let status = "processing";
-	// polling stops early when only the requests the answer needs are left: "still processing" beats a cut-off call
-	for (let i = 0; i < 30 && svc.jobId && status !== "completed" && (ctx.budget?.left() ?? Infinity) > 2; i++) {
-		await wait(2000);
-		const st = await ctx.request(`${userPath(ctx)}/items/${svc.serviceItemId}/status`,
-			{ jobId: svc.jobId, jobType: "publish" });
-		status = st.status;
-		if (status === "failed") throw new ArcGISError(`Publishing failed: ${st.statusMessage}`, "publish_failed");
-	}
+	// wait=false returns as soon as the job is started; the job is then checked with portal_item action=job_status
+	const status = !svc.jobId ? "completed" : args.wait === false ? "processing" : await pollJob(ctx, {
+		what: "Publishing", reserve: 2, failed: "publish_failed",
+		check: () => ctx.request(`${userPath(ctx)}/items/${svc.serviceItemId}/status`, { jobId: svc.jobId, jobType: "publish" }),
+	});
 	const published = await getItem(ctx, svc.serviceItemId);
 	let layers: unknown[] = [];
-	if (published.url && hostAllowed(published.url, ctx.props.portal, ctx.extraHosts)) {
+	if (status === "completed" && published.url && hostAllowed(published.url, ctx.props.portal, ctx.extraHosts)) {
 		const s = await ctx.request(published.url);
 		layers = [...(s.layers ?? []), ...(s.tables ?? [])].map((l: any, index: number) => ({ index, id: l.id, name: l.name,
 			url: `${published.url}/${l.id}` }));
@@ -194,5 +193,6 @@ export async function publish(ctx: Ctx, args: PublishArgs) {
 	audit(ctx.props, { tool: "portal_publish", action: "publish", target: title, ok: true,
 		details: { source: sourceId, published: svc.serviceItemId } });
 	return { source_item_id: sourceId, published_item: itemCard(published, ctx.props.portal), layers,
-		status: status === "completed" ? "completed" : `still ${status} (check later with portal_item)` };
+		...(status === "completed" ? { status }
+			: stillRunning(status, { item_id: svc.serviceItemId, job_id: svc.jobId, job_type: "publish" })) };
 }

@@ -6,6 +6,7 @@ import { createDashboard, WIDGET_HELP } from "./dashboard";
 import { registerExbDeveloper } from "./developer";
 import { EXB_WIDGET_HELP } from "./exb-build";
 import { createExperience, experienceTemplates } from "./experience";
+import { KIND_GUIDE } from "./guide";
 import { customWidget } from "./exb-widget";
 import { prepareFieldMaps } from "./fieldmaps";
 import { createInstant, instantTemplates, templateSettings } from "./instant";
@@ -21,18 +22,22 @@ export async function app(ctx: Ctx, args: AppArgs) {
 	const kind = args.kind;
 	if (!kind || !APP_KINDS.includes(kind)) throw new ArcGISError(`kind must be one of: ${APP_KINDS.join(", ")}.`, "bad_argument");
 	if ((args.action ?? "create") === "templates") {
+		// every kind answers with its guide: the arguments create takes, which the tool description leaves out
+		const guide = KIND_GUIDE[kind];
 		if (kind === "instant") {
 			const list = (await instantTemplates(ctx)).map(({ typeKeywords: _, ...t }) => t);
-			if (!args.template) return { kind, templates: list, settings: "Give template to list that template's settings (the options create takes)." };
+			if (!args.template) {
+				return { kind, guide, templates: list, settings: "Give template to list that template's settings (the options create takes)." };
+			}
 			const wanted = args.template.toLowerCase().trim();
 			const tpl = list.find((t) => t.id === wanted || t.name === wanted || t.title.toLowerCase() === wanted);
 			if (!tpl) throw new ArcGISError(`No Instant Apps template '${args.template}'. Available: ${list.map((t) => t.name).join(", ")}`, "not_found");
 			return { kind, template: tpl, settings: await templateSettings(ctx, { ...tpl, typeKeywords: [] }) };
 		}
-		if (kind === "experience") return { kind, templates: experienceTemplates(), build_from_widgets: EXB_WIDGET_HELP };
-		if (kind === "storymap") return { kind, themes: STORY_THEMES, blocks: BLOCK_HELP };
-		if (kind === "dashboard") return { kind, widgets: WIDGET_HELP };
-		throw new ArcGISError(`${kind} has no templates.`, "bad_argument");
+		if (kind === "experience") return { kind, guide, templates: experienceTemplates(), build_from_widgets: EXB_WIDGET_HELP };
+		if (kind === "storymap") return { kind, guide, themes: STORY_THEMES, blocks: BLOCK_HELP };
+		if (kind === "dashboard") return { kind, guide, widgets: WIDGET_HELP };
+		return { kind, guide, templates: null };
 	}
 	const out: any = await CREATE[kind](ctx, args);
 	// a custom widget is files for the user's own machine: nothing changed in ArcGIS, nothing to audit

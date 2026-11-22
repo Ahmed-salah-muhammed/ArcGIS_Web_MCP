@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exportItem, item, itemWrite, suggestMetadata } from "../../src/tools/portal_item/handler";
+import { exportItem, item, itemWrite, jobStatus, suggestMetadata } from "../../src/tools/portal_item/handler";
 import { fakeCtx, ID, ID2, silence, SVC, USER } from "../helpers";
 
 describe("portal_item: read", () => {
@@ -89,6 +89,31 @@ describe("portal_item: export and metadata", () => {
 		expect(out).toMatchObject({ status: "completed", format: "CSV", export_item: { id: ID2 },
 			download_url: `https://www.arcgis.com/sharing/rest/content/items/${ID2}/data` });
 		await expect(exportItem(ctx, { item_id: ID, format: "pdf" })).rejects.toMatchObject({ code: "bad_argument" });
+	});
+
+	it("export with wait=false returns its job, and job_status follows it up", async () => {
+		silence();
+		const statuses = ["processing", "completed"];
+		const { ctx, calls } = fakeCtx({
+			[`/content/items/${ID}`]: () => ({ id: ID, title: "Pts", type: "Feature Service", tags: [] }),
+			[`${USER}/export`]: () => ({ exportItemId: ID2, jobId: "j1", type: "CSV" }),
+			[`${USER}/items/${ID2}/status`]: () => ({ status: statuses.shift(), statusMessage: "" }),
+			[`/content/items/${ID2}`]: () => ({ id: ID2, title: "Pts_csv", type: "CSV", owner: "jdoe_gis" }),
+		});
+		const started: any = await exportItem(ctx, { item_id: ID, format: "csv", wait: false });
+		expect(started.job).toEqual({ item_id: ID2, job_id: "j1", job_type: "export" });
+		expect(started.status).toMatch(/^still processing/);
+		expect(calls.some((c) => c.url.endsWith("/status"))).toBe(false);
+
+		const running: any = await jobStatus(ctx, started.job);
+		expect(calls.at(-1)!.params).toEqual({ jobId: "j1", jobType: "export" });
+		expect(running).toMatchObject({ status: "processing", done: false, next: expect.stringMatching(/ask again/) });
+		expect(running.item).toBeUndefined();
+		const done: any = await jobStatus(ctx, started.job);
+		expect(done).toMatchObject({ status: "completed", done: true, item: { id: ID2 },
+			next: `download: https://www.arcgis.com/sharing/rest/content/items/${ID2}/data` });
+		await expect(jobStatus(ctx, { item_id: ID2 })).rejects.toThrow(/job_id is required/);
+		await expect(jobStatus(ctx, { item_id: ID2, job_id: "j1", job_type: "delete" })).rejects.toThrow(/publish \| export/);
 	});
 
 	it("export refuses items that are not feature layers", async () => {

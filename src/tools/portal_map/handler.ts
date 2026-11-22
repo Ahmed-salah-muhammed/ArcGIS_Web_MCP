@@ -111,14 +111,14 @@ async function layersFrom(ctx: Ctx, ref: string, popups: boolean): Promise<{ lay
 		}
 		const svc = await ctx.request(it.url);
 		const subs = [...(svc.layers ?? []), ...(svc.tables ?? [])];
-		const layers = [];
-		for (const [i, s] of subs.entries()) {
+		// every sublayer's definition (for its popup) is read at the same time, in the service's order
+		const layers = await Promise.all(subs.map(async (s, i) => {
 			const url = `${it.url}/${s.id}`;
 			const layer: any = { id: `${it.id.slice(0, 8)}_${i}`, title: subs.length > 1 ? s.name : it.title, url,
 				itemId: it.id, layerType: "ArcGISFeatureLayer", visibility: true, opacity: 1 };
 			if (popups) layer.popupInfo = popupFor(await ctx.request(url));
-			layers.push(layer);
-		}
+			return layer;
+		}));
 		return { layers, extent: it.extent ?? null };
 	}
 	const kinds: Record<string, string> = { "Map Service": "ArcGISMapServiceLayer", "Image Service": "ArcGISImageServiceLayer",
@@ -153,13 +153,10 @@ export async function webmap(ctx: Ctx, args: MapArgs) {
 	const popups = args.popups ?? true;
 	if (action === "create") {
 		if (!args.title || !args.layers?.length) throw new ArcGISError("title and layers (item ids / layer URLs) are required.", "bad_argument");
-		const ops: any[] = [];
-		const extents: (number[][] | null)[] = [];
-		for (const ref of args.layers) {
-			const { layers, extent } = await layersFrom(ctx, String(ref), popups);
-			ops.push(...layers);
-			extents.push(extent);
-		}
+		// the layers are independent: read together, kept in the order they were given
+		const parts = await Promise.all(args.layers.map((ref) => layersFrom(ctx, String(ref), popups)));
+		const ops: any[] = parts.flatMap((p) => p.layers);
+		const extents = parts.map((p) => p.extent);
 		const target = ops[findLayer(ops, args.layer ?? 0)];
 		if (args.renderer) {
 			target.layerDefinition = { ...(target.layerDefinition ?? {}), drawingInfo: { renderer:
@@ -178,8 +175,8 @@ export async function webmap(ctx: Ctx, args: MapArgs) {
 			typeKeywords: "ArcGIS Online,Explorer Web Map,Map,Online Map,Web Map",
 			extent: extent ? extent.flat().join(",") : undefined,
 		});
-		const saved = await ctx.request(`${base(ctx)}/content/items/${id}/data`);
-		const item = await ctx.request(`${base(ctx)}/content/items/${id}`);
+		const [saved, item] = await Promise.all([ctx.request(`${base(ctx)}/content/items/${id}/data`),
+			ctx.request(`${base(ctx)}/content/items/${id}`)]);
 		audit(ctx.props, { tool: "portal_map", action, target: id, ok: true });
 		return { webmap: itemCard(item, ctx.props.portal), ...summary(saved) };
 	}
@@ -193,7 +190,8 @@ export async function webmap(ctx: Ctx, args: MapArgs) {
 	const ops: any[] = (data.operationalLayers ??= []);
 	if (action === "add_layers") {
 		if (!args.layers?.length) throw new ArcGISError("layers (item ids / layer URLs) is required.", "bad_argument");
-		for (const ref of args.layers) ops.push(...(await layersFrom(ctx, String(ref), popups)).layers);
+		const parts = await Promise.all(args.layers.map((ref) => layersFrom(ctx, String(ref), popups)));
+		ops.push(...parts.flatMap((p) => p.layers));
 	} else if (action === "remove_layers") {
 		if (!args.layers?.length) throw new ArcGISError("layers (titles, ids, urls or indexes) is required.", "bad_argument");
 		const idx = [...new Set(args.layers.map((r) => findLayer(ops, r)))].sort((a, b) => b - a);

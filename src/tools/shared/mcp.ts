@@ -8,7 +8,8 @@ import { type ArcGISProps, ArcGISError, scrub } from "../../arcgis";
 import type { Ctx } from "./context";
 import { ConfirmRequired } from "./safety";
 
-export type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
+export type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean;
+	structuredContent?: Record<string, unknown> };
 export type Envelope = { ok: true; data: unknown } | ({ ok: false; error: string; code: string } & Record<string, unknown>);
 
 export const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: true } as const;
@@ -41,10 +42,19 @@ export async function envelope(props: ArcGISProps, body: () => Promise<unknown>)
 	}
 }
 
-/** The envelope as an MCP tool result. */
+/**
+ * The envelope as an MCP tool result: JSON text, which every client reads. `structured` adds the same envelope as
+ * structuredContent for clients that take an object; it is off unless the deployment asks for it (STRUCTURED_CONTENT),
+ * because a client that hands the model both copies doubles what every result costs.
+ */
+export function toResult(result: Envelope, structured = false): ToolResult {
+	return { content: [{ type: "text", text: JSON.stringify(result) }], ...(result.ok ? {} : { isError: true }),
+		...(structured ? { structuredContent: result as Record<string, unknown> } : {}) };
+}
+
+/** Run a tool body and return its envelope as an MCP tool result. */
 export async function run(props: ArcGISProps, body: () => Promise<unknown>): Promise<ToolResult> {
-	const result = await envelope(props, body);
-	return { content: [{ type: "text", text: JSON.stringify(result) }], ...(result.ok ? {} : { isError: true }) };
+	return toResult(await envelope(props, body));
 }
 
 export const confirm = z.boolean().optional().describe("Set true only after the user approved the preview");

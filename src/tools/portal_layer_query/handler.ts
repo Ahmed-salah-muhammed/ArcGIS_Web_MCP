@@ -1,7 +1,9 @@
 /**
  * portal_layer_query: read a feature layer or table: describe (fields, capabilities, count) | query (paged rows,
- * dates as ISO UTC) | count | stats ("sum:POP" shorthand, group_by). query, count and stats also filter by place:
- * a point, a box or any geometry, optionally within a distance of it.
+ * dates as ISO UTC, or GeoJSON) | count | stats ("sum:POP" shorthand, group_by) | distinct (a field's values) | extent
+ * (where the matching features are). query, count, stats, distinct and extent also filter by place: a point, a box or
+ * any geometry, optionally within a distance of it. What comes back is capped by size (max_chars), not only by rows:
+ * the rows that did not fit are the next page.
  */
 import { ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
@@ -9,9 +11,13 @@ import { iso } from "../shared/format";
 import { resolveLayerUrl } from "../shared/lookup";
 
 export const MAX_ROWS = 1000;
+export const DEFAULT_MAX_CHARS = 40_000; // about 10,000 tokens of rows
+export const MAX_MAX_CHARS = 400_000;
 
 export type LayerQueryArgs = {
-	action?: "describe" | "query" | "count" | "stats" | "attachments" | "related";
+	action?: "describe" | "query" | "count" | "stats" | "distinct" | "extent" | "attachments" | "related";
+	format?: "rows" | "geojson";
+	max_chars?: number;
 	object_ids?: number[];
 	relationship_id?: number | string;
 	target: string;
@@ -53,25 +59,7 @@ export function spatialFilter(args: SpatialArgs): Record<string, unknown> {
 		}
 		return {};
 	}
-	const g = args.geometry;
-	let geometry: Record<string, unknown>;
-	let geometryType: string | null = null;
-	if (Array.isArray(g)) {
-		if (!g.every((n) => typeof n === "number" && Number.isFinite(n))) throw new ArcGISError("geometry numbers must be finite.", "bad_argument");
-		if (g.length === 2) [geometry, geometryType] = [{ x: g[0], y: g[1] }, "esriGeometryPoint"];
-		else if (g.length === 4) {
-			[geometry, geometryType] = [{ xmin: Math.min(g[0], g[2]), ymin: Math.min(g[1], g[3]), xmax: Math.max(g[0], g[2]),
-				ymax: Math.max(g[1], g[3]) }, "esriGeometryEnvelope"];
-		} else geometry = {};
-	} else {
-		geometry = g;
-		geometryType = g.rings ? "esriGeometryPolygon" : g.paths ? "esriGeometryPolyline" : g.points ? "esriGeometryMultipoint"
-			: "xmin" in g ? "esriGeometryEnvelope" : "x" in g && "y" in g ? "esriGeometryPoint" : null;
-	}
-	if (!geometryType) {
-		throw new ArcGISError("geometry must be a point [x, y], a box [xmin, ymin, xmax, ymax], or Esri geometry JSON "
-			+ "(x/y, rings, paths, points or xmin/ymin/xmax/ymax).", "bad_argument");
-	}
+	const { geometry, geometryType } = esriGeometry(args.geometry);
 	const rel = SPATIAL_RELS[args.spatial_rel ?? "intersects"];
 	if (!rel) throw new ArcGISError(`spatial_rel must be ${Object.keys(SPATIAL_RELS).join(" | ")}.`, "bad_argument");
 	const sr = (geometry.spatialReference as any)?.wkid ?? (geometry.spatialReference as any)?.latestWkid ?? args.geometry_sr ?? 4326;
@@ -83,6 +71,52 @@ export function spatialFilter(args: SpatialArgs): Record<string, unknown> {
 		Object.assign(out, { distance: args.distance, units });
 	}
 	return out;
+}
+
+/** A point [x, y], a box [xmin, ymin, xmax, ymax] or Esri geometry JSON -> the Esri geometry and its type. */
+export function esriGeometry(g: number[] | Record<string, unknown>): { geometry: Record<string, unknown>; geometryType: string } {
+	let geometry: Record<string, unknown> = {};
+	let geometryType: string | null = null;
+	if (Array.isArray(g)) {
+		if (!g.every((n) => typeof n === "number" && Number.isFinite(n))) throw new ArcGISError("geometry numbers must be finite.", "bad_argument");
+		if (g.length === 2) [geometry, geometryType] = [{ x: g[0], y: g[1] }, "esriGeometryPoint"];
+		else if (g.length === 4) {
+			[geometry, geometryType] = [{ xmin: Math.min(g[0], g[2]), ymin: Math.min(g[1], g[3]), xmax: Math.max(g[0], g[2]),
+				ymax: Math.max(g[1], g[3]) }, "esriGeometryEnvelope"];
+		}
+	} else if (g && typeof g === "object") {
+		geometry = g;
+		geometryType = g.rings ? "esriGeometryPolygon" : g.paths ? "esriGeometryPolyline" : g.points ? "esriGeometryMultipoint"
+			: "xmin" in g ? "esriGeometryEnvelope" : "x" in g && "y" in g ? "esriGeometryPoint" : null;
+	}
+	if (!geometryType) {
+		throw new ArcGISError("geometry must be a point [x, y], a box [xmin, ymin, xmax, ymax], or Esri geometry JSON "
+			+ "(x/y, rings, paths, points or xmin/ymin/xmax/ymax).", "bad_argument");
+	}
+	return { geometry, geometryType };
+}
+
+/**
+ * The rows that fit in maxChars of JSON, always at least one. A layer with long text or many fields can answer a
+ * modest row limit with megabytes; the model's context is the scarce thing, so size is capped and the rest is paged.
+ */
+export function capRows<T>(rows: T[], maxChars: number): T[] {
+	const kept: T[] = [];
+	let size = 2;
+	for (const row of rows) {
+		size += JSON.stringify(row).length + 1;
+		if (kept.length && size > maxChars) break;
+		kept.push(row);
+	}
+	return kept;
+}
+
+function maxCharsOf(args: LayerQueryArgs): number {
+	return Math.max(1000, Math.min(Math.trunc(args.max_chars ?? DEFAULT_MAX_CHARS), MAX_MAX_CHARS));
+}
+
+function cutNote(kept: number, all: number, maxChars: number, how: string) {
+	return kept < all ? { truncated: `${kept} of ${all} fit in max_chars=${maxChars}; ${how}` } : {};
 }
 
 /** What a spatial filter did, in the answer. */
@@ -173,9 +207,21 @@ async function related(ctx: Ctx, url: string, args: LayerQueryArgs) {
 		objectIds: ids.join(","), relationshipId: rel.id, outFields: args.fields?.length ? args.fields.join(",") : "*",
 		returnGeometry: false,
 	});
-	const groups = (res.relatedRecordGroups ?? []).map((g: any) => ({ object_id: g.objectId,
-		records: rowsFrom((g.relatedRecords ?? []).slice(0, MAX_ROWS), res.fields, false) }));
-	return { layer: p.name, relationship: { id: rel.id, name: rel.name, related_table_id: rel.relatedTableId }, groups };
+	// the size cap is shared by the groups, in order: what did not fit is asked for again with fewer object_ids
+	const maxChars = maxCharsOf(args);
+	let room = maxChars;
+	let all = 0;
+	let kept = 0;
+	const groups = (res.relatedRecordGroups ?? []).map((g: any) => {
+		const rows = rowsFrom((g.relatedRecords ?? []).slice(0, MAX_ROWS), res.fields, false);
+		const records = room > 0 ? capRows(rows, room) : [];
+		room -= JSON.stringify(records).length;
+		all += rows.length;
+		kept += records.length;
+		return { object_id: g.objectId, records };
+	});
+	return { layer: p.name, relationship: { id: rel.id, name: rel.name, related_table_id: rel.relatedTableId }, groups,
+		...cutNote(kept, all, maxChars, "ask for fewer object_ids or fields, or raise max_chars") };
 }
 
 function describeFields(fields: any[] = []) {
@@ -192,9 +238,9 @@ export async function layerQuery(ctx: Ctx, args: LayerQueryArgs) {
 	const sp = spatialFilter(args); // checked before any request
 	const url = await resolveLayerUrl(ctx, args.target, args.layer ?? 0);
 	const where = args.where?.trim() || "1=1";
+	const maxChars = maxCharsOf(args);
 	if (action === "describe") {
-		const p = await ctx.request(url);
-		const count = await ctx.request(`${url}/query`, { where: "1=1", returnCountOnly: true });
+		const [p, count] = await Promise.all([ctx.request(url), ctx.request(`${url}/query`, { where: "1=1", returnCountOnly: true })]);
 		return {
 			name: p.name, type: p.type, url, geometryType: p.geometryType ?? null, objectIdField: p.objectIdField ?? null,
 			globalIdField: p.globalIdField || null, displayField: p.displayField || null, count: count.count ?? null,
@@ -220,22 +266,73 @@ export async function layerQuery(ctx: Ctx, args: LayerQueryArgs) {
 			where, ...sp, outStatistics: parseStats(args.stats), groupByFieldsForStatistics: args.group_by,
 			orderByFields: args.order_by, returnGeometry: false,
 		});
-		return { where, ...spatialNote(sp, args), group_by: args.group_by ?? null, rows: rowsFrom((res.features ?? []).slice(0, MAX_ROWS), [], false) };
+		const all = rowsFrom((res.features ?? []).slice(0, MAX_ROWS), [], false);
+		const rows = capRows(all, maxChars);
+		return { where, ...spatialNote(sp, args), group_by: args.group_by ?? null, rows,
+			...cutNote(rows.length, all.length, maxChars, "narrow where or group_by, or raise max_chars") };
+	}
+	if (action === "distinct") {
+		if (!args.fields?.length) {
+			throw new ArcGISError('fields is required: the field(s) whose distinct values you want, e.g. ["STATUS"].', "bad_argument");
+		}
+		// no resultOffset / resultRecordCount: paging an aggregated query is a capability many layers lack
+		const res = await ctx.request(`${url}/query`, {
+			where, ...sp, outFields: args.fields.join(","), returnDistinctValues: true, returnGeometry: false,
+			orderByFields: args.order_by ?? args.fields.join(","),
+		});
+		const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 200), MAX_ROWS));
+		const all = rowsFrom(res.features ?? [], res.fields, false);
+		const rows = capRows(all.slice(0, limit), maxChars);
+		const one = args.fields.length === 1 ? args.fields[0] : null;
+		return {
+			where, ...spatialNote(sp, args), fields: args.fields, count: rows.length,
+			...(one ? { values: rows.map((r) => r[one] ?? null) } : { rows }),
+			more: rows.length < all.length || Boolean(res.exceededTransferLimit) ? "there are more values: narrow where" : null,
+		};
+	}
+	if (action === "extent") {
+		const res = await ctx.request(`${url}/query`, { where, ...sp, returnExtentOnly: true, returnCountOnly: true,
+			outSR: args.out_sr ?? 4326 });
+		const e = res.extent;
+		const box = e ? [e.xmin, e.ymin, e.xmax, e.ymax].map(Number) : [];
+		const found = box.length === 4 && box.every(Number.isFinite); // no features: extent is null (or NaN on older servers)
+		return { where, ...spatialNote(sp, args), count: res.count ?? null, extent: found ? box : null,
+			sr: found ? e.spatialReference?.wkid ?? args.out_sr ?? 4326 : null, order: "[xmin, ymin, xmax, ymax]" };
 	}
 	if (action !== "query") {
-		throw new ArcGISError("action must be describe | query | count | stats | attachments | related.", "bad_action");
+		throw new ArcGISError("action must be describe | query | count | stats | distinct | extent | attachments | related.", "bad_action");
 	}
 	const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 50), MAX_ROWS));
 	const offset = Math.max(0, Math.trunc(args.offset ?? 0));
+	const paging = "continue with offset=next_offset, ask for fewer fields, or raise max_chars";
+	if ((args.format ?? "rows") === "geojson") {
+		// f=geojson: the service itself writes RFC 7946 features, always in longitude/latitude
+		const res = await ctx.request(`${url}/query`, {
+			where, ...sp, outFields: args.fields?.length ? args.fields.join(",") : "*", returnGeometry: true, outSR: 4326,
+			resultOffset: offset, resultRecordCount: limit, orderByFields: args.order_by, f: "geojson",
+		});
+		const all: unknown[] = res.features ?? [];
+		const features = capRows(all, maxChars);
+		const more = features.length < all.length || all.length >= limit
+			|| Boolean(res.properties?.exceededTransferLimit ?? res.exceededTransferLimit);
+		return {
+			where, ...spatialNote(sp, args), format: "geojson", count: features.length, offset,
+			next_offset: more ? offset + features.length : null, geojson: { type: "FeatureCollection", features },
+			...cutNote(features.length, all.length, maxChars, paging),
+			note: "WGS84 longitude/latitude; date properties are epoch milliseconds",
+		};
+	}
 	const res = await ctx.request(`${url}/query`, {
 		where, ...sp, outFields: args.fields?.length ? args.fields.join(",") : "*", returnGeometry: Boolean(args.return_geometry),
 		outSR: args.return_geometry ? args.out_sr : undefined, resultOffset: offset, resultRecordCount: limit, orderByFields: args.order_by,
 	});
-	const rows = rowsFrom(res.features ?? [], res.fields, Boolean(args.return_geometry));
-	const more = rows.length >= limit || Boolean(res.exceededTransferLimit);
+	const all = rowsFrom(res.features ?? [], res.fields, Boolean(args.return_geometry));
+	const rows = capRows(all, maxChars);
+	const more = rows.length < all.length || all.length >= limit || Boolean(res.exceededTransferLimit);
 	const hasDates = (res.fields ?? []).some((f: any) => f.type === "esriFieldTypeDate");
 	return {
 		where, ...spatialNote(sp, args), count: rows.length, offset, next_offset: more ? offset + rows.length : null, rows,
+		...cutNote(rows.length, all.length, maxChars, paging),
 		dates: hasDates ? "ISO 8601 UTC (stored as epoch ms)" : null,
 	};
 }

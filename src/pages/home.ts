@@ -110,7 +110,7 @@ function architecture() {
 	  </a>
 	</div>
 	<figure class="architecture">
-	  <img src="/arcgis-web-mcp-architecture.svg?v=static-card" alt="ArcGIS Web MCP enterprise architecture">
+	  <img src="/arcgis-web-mcp-architecture.svg?v=static-card" alt="ArcGIS Web MCP enterprise architecture" loading="lazy" decoding="async">
 	</figure>
 	<h2 id="architecture-components">How to read the diagram</h2>
 	<div class="architecture-components">
@@ -316,12 +316,15 @@ function security() {
 function limits() {
 	const rows = [
 		["Requests", "100,000 a day on Cloudflare's free plan"],
-		["Rows per query", "Up to 1,000 per call (50 by default); page with offset"],
-		["Edits per call", "Up to 5,000, in at most 30 batches"],
+		["Rows per query", "Up to 1,000 per call (50 by default) and 40,000 characters (max_chars); page with offset"],
+		["Edits per call", "Up to 5,000, in at most 30 batches; larger loads: append an uploaded file"],
 		["Publishing", "Up to 5 MB of CSV or GeoJSON text per call"],
 		["Attachments", "Up to 10 MB per file"],
 		["Batch", "Up to 10 tool calls per portal_batch"],
 		["Requests to ArcGIS", "Up to 50 per call on Cloudflare's free plan; a call that needs more stops with subrequest_limit"],
+		["Time per request", "30 seconds for one ArcGIS request (90 for an upload); a request refused with 429 is tried once more"],
+		["Long jobs", "Publish, export and append wait up to a minute; wait=false returns a job to check later"],
+		["Calls per user", "120 MCP requests a minute for each signed-in account; more answers 429"],
 	].map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
 	return page("limits", "Guides", "Limits", `
   <p class="lead">Limits that keep every call fast and inside the free hosting plan.</p>
@@ -706,9 +709,14 @@ export function homePage(origin: string, author: Author | null): string {
 </html>`;
 }
 
-/** Headers for the documentation page: no framing, only its own stylesheet and inline script, and same-origin requests. */
+/**
+ * Headers for the documentation page: no framing, only its own stylesheet and inline script, and same-origin requests.
+ * `no-cache` with an ETag (see the handler): a browser keeps its copy and asks whether it is still current, so a deploy
+ * shows at once and an unchanged page costs a 304 instead of 300 KB.
+ */
 export const HOME_HEADERS = {
 	"Content-Type": "text/html; charset=utf-8",
+	"Cache-Control": "no-cache",
 	"Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'unsafe-inline'; img-src 'self' data:; "
 		+ "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 	"X-Frame-Options": "DENY",
