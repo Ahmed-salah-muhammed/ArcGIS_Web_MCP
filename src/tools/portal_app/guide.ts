@@ -31,6 +31,8 @@ export const KIND_GUIDE: Record<AppKind, Record<string, string>> = {
 			+ "pairing two names (e.g. {from: GOV_NAME, to: governorate}); selecting a polygon on the map filters what lies inside.",
 		interaction: "interactive (default true): selecting in a chart, list or table filters the other widgets and the map and "
 			+ "zooms to it; selecting on the map filters them. extent_filter (default true): moving the map filters the widgets.",
+		mobile: "mobile = true: one dashboard with a desktop view and a mobile view (see widgets.mobile); a widget with mobile: false "
+			+ "stays on the desktop only.",
 		look: "style classic (default) | executive; theme light | dark | navy; subtitle, logo_url (https image), logo_link (https), "
 			+ "menu_links = [{label, url}] (up to 8, https), sidebar_title.",
 	},

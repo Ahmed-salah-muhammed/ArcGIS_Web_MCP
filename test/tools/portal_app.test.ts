@@ -1,7 +1,7 @@
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { autoWidgets, chartGuides, correspondingField, iconSvg, layoutFor, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
+import { autoWidgets, chartGuides, copyWithIds, correspondingField, iconSvg, layoutFor, mobileLayout, NAVY_THEME, widgetFilter } from "../../src/tools/portal_app/dashboard";
 import { gridLayout } from "../../src/tools/portal_app/exb-build";
 import { arcadeTest, filterSql } from "../../src/tools/portal_app/filters";
 import { formFor, inputFor } from "../../src/tools/portal_app/fieldmaps";
@@ -1127,5 +1127,159 @@ describe("portal_app: Experience Builder Developer Edition", () => {
 		expect(tool.description.length).toBeLessThan(1200);
 		expect(tool.description).toContain("FIRST call action=templates");
 		expect(JSON.stringify(z.toJSONSchema(tool.schema)).length).toBeLessThan(12500);
+	});
+});
+
+// The mobile view's shape (mobileView {type, widgets, settings, layout, header, drawer}, elementMappings desktop id ->
+// mobile id, the "Mobile" type keyword, a one-column "row" stack of items / "col" stacks / a tabsLayoutElement) is the
+// one 14 public dashboards on ArcGIS Online had when read in 2026-11 (schema 5.1.0 and 5.2.0).
+describe("portal_app: dashboards with a mobile view", () => {
+	const layer = { name: "users", objectIdField: "OBJECTID", displayField: "NAME", geometryType: "esriGeometryPoint", fields: [
+		{ name: "OBJECTID", type: "esriFieldTypeOID" }, { name: "NAME", type: "esriFieldTypeString" },
+		{ name: "Role", type: "esriFieldTypeString" }, { name: "COST", type: "esriFieldTypeDouble" },
+		{ name: "JoinDate", type: "esriFieldTypeDate" }] };
+	const routes = () => ({ ...common({
+		[`/content/items/${ID}`]: () => ({ id: ID, type: "Feature Service", url: SVC }),
+		[SVC]: () => ({ layers: [{ id: 0, name: "users" }] }),
+		[`${SVC}/0`]: () => layer,
+		[`${SVC}/0/query`]: () => ({ features: [{ attributes: { Role: "owner", n: 5 } }, { attributes: { Role: "user", n: 9 } }] }),
+	}), [`/content/items/${MAP}/data`]: () => ({ operationalLayers: [{ id: "op-users", title: "Users", url: `${SVC}/0` }] }) });
+	const build = async (args: Record<string, unknown>) => {
+		silence();
+		const { ctx, calls } = fakeCtx(routes());
+		const out: any = await app(ctx, { kind: "dashboard", ...args } as any);
+		const add = sent(calls, "/addItem")[0].params;
+		return { out, add, data: json(add.text) };
+	};
+	const leaves = (layout: unknown) => (JSON.stringify(layout).match(/"itemLayoutElement","id":"[^"]+"/g) ?? []).map((s) => s.split('"').at(-2));
+	const WIDGETS = [{ type: "map" }, { type: "legend" }, { type: "indicator", title: "Users" }, { type: "indicator", field: "COST", title: "Cost" },
+		{ type: "pie", field: "Role", title: "Roles" }, { type: "table", title: "All users" }, { type: "details" }];
+
+	it("the phone layout is one column: numbers two to a line, the map, the rest in tabs; heights add up to the screen", () => {
+		const e = (id: string, type: string, extra: Record<string, unknown> = {}) => ({ id, type, name: id.toUpperCase(), ...extra } as any);
+		const layout = mobileLayout([e("map", "map", { main: true }), e("a", "indicator"), e("b", "indicator"), e("c", "gauge"),
+			e("pie", "pie"), e("table", "table")]);
+		const root = layout.rootElement;
+		expect(layout.type).toBe("dockingLayout");
+		expect(root).toMatchObject({ type: "stackLayoutElement", orientation: "row", width: 1, height: 1 });
+		const [first, second, map, tabs] = root.elements as any[];
+		expect(first).toMatchObject({ type: "stackLayoutElement", orientation: "col", height: 0.13,
+			elements: [{ type: "itemLayoutElement", id: "a", width: 0.5, height: 1 }, { type: "itemLayoutElement", id: "b", width: 0.5, height: 1 }] });
+		expect(second).toEqual({ width: 1, height: 0.13, type: "itemLayoutElement", id: "c" }); // an odd one out takes the line
+		expect(map).toEqual({ width: 1, height: 0.37, type: "itemLayoutElement", id: "map" });
+		expect(tabs).toMatchObject({ type: "tabsLayoutElement", height: 0.37, elements: [
+			{ width: 1, height: 1, tabName: "PIE", type: "itemLayoutElement", id: "pie" },
+			{ width: 1, height: 1, tabName: "TABLE", type: "itemLayoutElement", id: "table" }] });
+		expect((root.elements as any[]).reduce((s, x) => s + x.height, 0)).toBeCloseTo(1, 10);
+
+		// more than four numbers: the rest become tabs; one other widget is not a tab panel of one
+		const many = mobileLayout([...["a", "b", "c", "d", "x"].map((id) => e(id, "indicator")), e("list", "list")]).rootElement.elements as any[];
+		expect(many).toHaveLength(3);
+		expect(many[2].elements.map((t: any) => t.tabName)).toEqual(["X", "LIST"]);
+		expect(mobileLayout([e("a", "indicator"), e("list", "list")]).rootElement.elements).toEqual([
+			{ width: 1, height: 0.13, type: "itemLayoutElement", id: "a" }, { width: 1, height: 0.87, type: "itemLayoutElement", id: "list" }]);
+		// numbers alone share the screen
+		expect((mobileLayout([e("a", "indicator"), e("b", "indicator"), e("c", "indicator")]).rootElement.elements as any[]).map((x) => x.height))
+			.toEqual([0.5, 0.5]);
+	});
+
+	it("copies follow their ids everywhere, and nothing else changes", () => {
+		const a = "11111111-1111-4111-8111-111111111111";
+		const b = "22222222-2222-4222-8222-222222222222";
+		const copy = copyWithIds([{ id: a, name: "Map" }, { id: b, mapWidgetId: a, events: [{ targets: [{ targetId: `${a}#op-1` }] }] }],
+			new Map([[a, "A2"], [b, "B2"]]));
+		expect(copy).toEqual([{ id: "A2", name: "Map" }, { id: "B2", mapWidgetId: "A2", events: [{ targets: [{ targetId: "A2#op-1" }] }] }]);
+	});
+
+	it("mobile=true writes a mobile view of copied widgets, wired among themselves, next to an unchanged desktop view", async () => {
+		const plain = await build({ target: ID, webmap_id: MAP, widgets: WIDGETS, selectors: [{ type: "category", field: "Role" }] });
+		expect(plain.data.mobileView).toBeUndefined();
+		expect(plain.data.elementMappings).toEqual({});
+		expect(plain.add.typeKeywords).toBe("ArcGIS Dashboards,Dashboard,Operations Dashboard");
+		expect(plain.out.mobile).toBeUndefined();
+
+		const { out, add, data } = await build({ target: ID, webmap_id: MAP, widgets: WIDGETS, mobile: true, subtitle: "Live",
+			selectors: [{ type: "category", field: "Role" }] });
+		expect(add.typeKeywords).toBe("ArcGIS Dashboards,Dashboard,Mobile,Operations Dashboard");
+		const d = data.desktopView;
+		const m = data.mobileView;
+		expect(Object.keys(m).sort()).toEqual(["drawer", "header", "layout", "settings", "type", "widgets"]);
+		expect(m).toMatchObject({ type: "mobile", settings: { allowElementResizing: false, allowReset: false } });
+		expect(m.widgets.map((w: any) => w.type)).toEqual(d.widgets.map((w: any) => w.type));
+
+		// every desktop element is mapped to its own copy, and neither view mentions the other's ids
+		const desktopIds: string[] = [...d.widgets, ...d.header.selectors].map((w: any) => w.id);
+		const mobileIds: string[] = [...m.widgets, ...m.drawer.selectors].map((w: any) => w.id);
+		expect(Object.keys(data.elementMappings)).toEqual(desktopIds);
+		expect(Object.values(data.elementMappings)).toEqual(mobileIds);
+		expect(new Set([...desktopIds, ...mobileIds]).size).toBe(desktopIds.length * 2);
+		for (const id of desktopIds) expect(JSON.stringify(m)).not.toContain(id);
+		for (const id of mobileIds) expect(JSON.stringify(d)).not.toContain(id);
+
+		// the copies are the same widgets, wired to each other
+		const [map, legend, users, , pie, table, details] = m.widgets;
+		expect(legend.mapWidgetId).toBe(map.id);
+		expect(details.mapWidgetId).toBe(map.id);
+		expect(pie.events[0].actions[0].targets.map((t: any) => t.targetId)).toEqual(expect.arrayContaining(
+			[`${users.id}#main`, `${table.id}#main`, `${map.id}#op-users`]));
+		expect(pie.events[0].actions[1]).toMatchObject({ type: "zoom", targets: [{ targetId: map.id }] });
+		expect(map.events[0]).toMatchObject({ type: "extentChanged" });
+		expect(map.layers[0].events[0].actions[0].targets.some((t: any) => t.targetId === `${users.id}#main`)).toBe(true);
+		const strip = (w: any) => JSON.stringify(w).split(w.id).join("ID");
+		expect(strip(m.widgets[2])).toBe(strip(d.widgets[2])); // an indicator: identical but for its id
+		expect(JSON.stringify(m.widgets).length).toBe(JSON.stringify(d.widgets).length);
+
+		// selectors: in the desktop header, in the phone's drawer; the phone header carries none
+		expect(d.header.selectors).toHaveLength(1);
+		expect(m.header.selectors).toBeUndefined();
+		expect(m.header).toMatchObject({ dashboardItemType: "panel", type: "header", title: d.header.title, subtitle: "Live", subtitlePlacement: "below" });
+		expect(d.header.subtitlePlacement).toBe("sameLine");
+		expect({ ...m.drawer, selectors: null }).toEqual({ dashboardItemType: "panel", type: "drawer", selectors: null });
+		expect(m.drawer.selectors[0].events[0].actions[0].targets.map((t: any) => t.targetId)).toEqual(expect.arrayContaining(
+			[`${pie.id}#main`, `${map.id}#op-users`]));
+
+		// the layout holds exactly the phone's widgets: two numbers on a line, the map, the rest in tabs
+		expect(new Set(leaves(m.layout))).toEqual(new Set(m.widgets.map((w: any) => w.id)));
+		const [numbers, mapItem, tabs] = m.layout.rootElement.elements;
+		expect(m.layout.rootElement.orientation).toBe("row");
+		expect(numbers.elements.map((x: any) => x.id)).toEqual([users.id, m.widgets[3].id]);
+		expect(mapItem.id).toBe(map.id);
+		expect(tabs.elements.map((x: any) => x.tabName)).toEqual(["Legend", "Roles", "All users", "Details"]);
+		expect(numbers.height + mapItem.height + tabs.height).toBeCloseTo(1, 10);
+		expect(new Set(leaves(d.layout))).toEqual(new Set(d.widgets.map((w: any) => w.id))); // the desktop layout is its own
+		expect(out.mobile).toMatchObject({ widgets: ["Parks", "Legend", "Users", "Cost", "Roles", "All users", "Details"], left_out: null });
+	});
+
+	it("mobile: false leaves a widget on the desktop only; without the map, what shows it goes too", async () => {
+		const widgets = WIDGETS.map((w) => (w.type === "map" || w.type === "table" ? { ...w, mobile: false } : w));
+		const { out, data } = await build({ target: ID, webmap_id: MAP, widgets, mobile: true });
+		const d = data.desktopView;
+		const m = data.mobileView;
+		expect(d.widgets.map((w: any) => w.type)).toEqual(["mapWidget", "legendWidget", "indicatorWidget", "indicatorWidget", "pieChartWidget",
+			"tableWidget", "detailsWidget"]);
+		expect(m.widgets.map((w: any) => w.type)).toEqual(["indicatorWidget", "indicatorWidget", "pieChartWidget", "detailsWidget"]);
+		expect(out.mobile.left_out).toEqual(["Parks", "Legend", "All users"]);
+		expect(Object.keys(data.elementMappings)).toHaveLength(4);
+		expect(m.drawer).toBeUndefined(); // no selectors: no drawer
+		// nothing on the phone points at a widget that is not there
+		const [users, , pie, details] = m.widgets;
+		expect(details.mapWidgetId).toBeUndefined();
+		const targets = pie.events[0].actions.flatMap((a: any) => a.targets.map((t: any) => t.targetId.split("#")[0]));
+		expect(new Set(targets)).toEqual(new Set([users.id, m.widgets[1].id, details.id]));
+		expect(pie.events[0].actions.map((a: any) => a.type)).toEqual(["filter"]); // no map: no zoom
+		for (const w of d.widgets) expect(JSON.stringify(m)).not.toContain(w.id);
+		// the desktop pie still filters the map and the table
+		const desktopTargets = d.widgets[4].events[0].actions[0].targets.map((t: any) => t.targetId);
+		expect(desktopTargets).toEqual(expect.arrayContaining([`${d.widgets[0].id}#op-users`, `${d.widgets[5].id}#main`]));
+	});
+
+	it("interactive=false is not wired on the phone either; a phone view of nothing is refused before anything is created", async () => {
+		const { data } = await build({ target: ID, widgets: [{ type: "pie", field: "Role" }, { type: "table" }], mobile: true, interactive: false });
+		expect(data.mobileView.widgets.every((w: any) => !w.events)).toBe(true);
+		expect(data.mobileView.layout.rootElement.elements[0].elements.map((x: any) => x.tabName)).toEqual(["Count by Role", "Table"]);
+		const { ctx, calls } = fakeCtx(routes());
+		await expect(app(ctx, { kind: "dashboard", target: ID, mobile: true, widgets: [{ type: "table", mobile: false }] } as any))
+			.rejects.toThrow(/every widget has mobile: false/);
+		expect(sent(calls, "/addItem")).toHaveLength(0);
 	});
 });

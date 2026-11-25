@@ -19,7 +19,8 @@ export const tool = defineTool({
 	description: "Build apps from your maps and layers. FIRST call action=templates with the kind: it returns that kind's guide "
 		+ "(every argument, widget and option create takes) and its templates. Then action=create (default) builds the app and "
 		+ "returns its ArcGIS item and link. Kinds: instant (an Instant Apps template on webmap_id) | dashboard (widgets and "
-		+ "selectors on a feature layer and/or a web map; automatic when widgets are omitted) | experience (Experience Builder: "
+		+ "selectors on a feature layer and/or a web map; automatic when widgets are omitted; mobile=true adds a phone view to "
+		+ "the same dashboard) | experience (Experience Builder: "
 		+ "built from widgets on webmap_id, or from a template) | storymap (blocks, sections, or just a webmap_id) | survey (a "
 		+ "Survey123 draft from questions or a layer's fields) | fieldmaps (forms for a web map's editable layers) | exb_developer "
 		+ "(registers Experience Builder Developer Edition; returns the client ID and the steps) | exb_widget (a custom widget "
@@ -51,6 +52,7 @@ export const tool = defineTool({
 			filter: conditions.optional(),
 			column: z.enum(COLUMNS).optional(),
 			tab: z.string().max(40).optional(),
+			mobile: z.boolean().optional(),
 			color: z.string().optional(),
 			period: z.enum(PERIODS).optional(),
 			rotated: z.boolean().optional(),
@@ -97,6 +99,7 @@ export const tool = defineTool({
 		style: z.enum(STYLES).optional(),
 		interactive: z.boolean().optional(),
 		extent_filter: z.boolean().optional(),
+		mobile: z.boolean().optional().describe("dashboard: also a phone layout (mobile view) in the same dashboard"),
 		subtitle: z.string().max(200).optional(),
 		logo_url: z.string().optional(),
 		sections: z.array(z.object({ heading: z.string().optional(), text: z.string().optional(), webmap_id: z.string().optional() }))

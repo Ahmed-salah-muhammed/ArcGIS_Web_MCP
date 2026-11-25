@@ -37,6 +37,8 @@ export type WidgetSpec = {
 	column?: (typeof COLUMNS)[number];
 	/** Widgets of a column with a tab share one tabbed panel; this is the tab's name. */
 	tab?: string;
+	/** dashboard with mobile=true: false leaves this widget out of the phone view. */
+	mobile?: boolean;
 	/** "#rrggbb": an indicator's value, a bar or line chart's series. */
 	color?: string;
 	/** bar/line on a date field: one bar or point per day, month or year. */
@@ -173,6 +175,8 @@ export type AppArgs = {
 	interactive?: boolean;
 	/** dashboard: moving the map filters the widgets to what it shows; default true. */
 	extent_filter?: boolean;
+	/** dashboard: also a mobile view (a phone layout of the same widgets) in the same dashboard. */
+	mobile?: boolean;
 	subtitle?: string;
 	logo_url?: string;
 	/** dashboard: where clicking the logo goes. */

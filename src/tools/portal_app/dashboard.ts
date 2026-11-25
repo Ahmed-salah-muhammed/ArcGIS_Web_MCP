@@ -23,6 +23,13 @@
  * web map), as dashboards allow. Across layers, actions follow the Actions tab's rules: a target on another layer is
  * filtered through a field both layers have (the same name, or paired in links: fieldMap source -> target), and
  * selecting a polygon on the map filters the other layers' widgets by geometry (what lies inside it).
+ * mobile=true adds a mobileView next to desktopView, shaped like the mobile views of 14 public dashboards read from
+ * ArcGIS Online (2026-11, schema 5.1.0 and 5.2.0): {type: "mobile", widgets, settings, layout, header, drawer}. Its
+ * widgets are copies under their own ids (what "copy from desktop" makes), wired among themselves; elementMappings
+ * maps each desktop id to its mobile copy; the layout is one column (a "row" stack whose heights add up to 1) of
+ * items, side-by-side "col" stacks and a tabsLayoutElement; selectors sit in drawer {dashboardItemType: "panel",
+ * type: "drawer", selectors} and the mobile header has none; the item gets the "Mobile" type keyword (13 of the 14
+ * had it, none of 34 dashboards without a mobile view did).
  */
 import { ArcGISError } from "../../arcgis";
 import type { Ctx } from "../shared/context";
@@ -110,6 +117,10 @@ export const WIDGET_HELP = {
 	legend: "The map's legend.",
 	text: "Rich text (text).",
 	embed: "A web page shown inside the dashboard (url, https): an Experience Builder app, a video...",
+	mobile: "mobile = true adds a phone view to the same dashboard (shown on phones in place of the desktop layout): copies of "
+		+ "the widgets, filtering each other the same way, in one column: indicators and gauges two to a line on top (the first "
+		+ "four), the map under them, every other widget a tab of one panel (tab name = its tab or title); selectors open from a "
+		+ "drawer. A widget with mobile: false is left out of the phone view (a wide table, say).",
 	every_widget: "filter = {FIELD: value | [values] | {op, value, unit}} (op = | != | > | >= | <= | in | not_in | not_null on text and "
 		+ "numbers; last | before_last (value + unit hour|day|month|year) | this_year | last_year on dates); column = left | center | right; tab = a tab name "
 		+ "(widgets of a column with a tab share one tabbed panel); color = #rrggbb (indicator value, bar/line series); "
@@ -798,6 +809,61 @@ export function layoutFor(columns: { ids: LayoutEntry[]; width: number }[]) {
 			elements: c.ids.map((e) => entry(e, 1 / c.ids.length)) })) } };
 }
 
+// --- the mobile view --------------------------------------------------------------------------------------------
+
+/** A widget of the phone view: its id there, what it is, the name its tab gets, and whether it is the main map. */
+export type MobileEntry = { id: string; type: WidgetSpec["type"]; name: string; main?: boolean };
+
+const MOBILE_NUMBERS = new Set<WidgetSpec["type"]>(["indicator", "gauge"]);
+const NUMBERS_PER_ROW = 2;
+const NUMBER_ROWS = 2;
+const NUMBER_ROW_HEIGHT = 0.13;
+
+/**
+ * A phone layout, as the mobile views of real dashboards are laid out: one column. Indicators and gauges go two to a
+ * line at the top (the first four; a phone is too narrow and too short for more), the main map under them, and every
+ * other widget in one tabbed panel at the bottom, a tab each. The heights add up to 1: the screen, without scrolling.
+ */
+export function mobileLayout(entries: MobileEntry[]) {
+	const numbers = entries.filter((e) => MOBILE_NUMBERS.has(e.type)).slice(0, NUMBERS_PER_ROW * NUMBER_ROWS);
+	const map = entries.find((e) => e.main);
+	const rest = entries.filter((e) => e !== map && !numbers.includes(e));
+	const item = (e: MobileEntry, width: number, height: number, tab = false) => ({ width, height, ...(tab ? { tabName: e.name } : {}),
+		type: "itemLayoutElement", id: e.id });
+	const rows: MobileEntry[][] = [];
+	for (let i = 0; i < numbers.length; i += NUMBERS_PER_ROW) rows.push(numbers.slice(i, i + NUMBERS_PER_ROW));
+	// the lines of numbers are thin; the map and the tabbed panel share what is left
+	const parts: { thin: boolean; make: (height: number) => Record<string, unknown> }[] = rows.map((row) => ({ thin: true,
+		make: (height) => (row.length === 1 ? item(row[0], 1, height) : { width: 1, height, id: uuid(), type: "stackLayoutElement",
+			orientation: "col", elements: row.map((e) => item(e, 1 / row.length, 1)) }) }));
+	if (map) parts.push({ thin: false, make: (height) => item(map, 1, height) });
+	if (rest.length) {
+		parts.push({ thin: false, make: (height) => (rest.length === 1 ? item(rest[0], 1, height)
+			: { width: 1, height, id: uuid(), type: "tabsLayoutElement", elements: rest.map((e) => item(e, 1, 1, true)) }) });
+	}
+	const wide = parts.filter((p) => !p.thin).length;
+	const thinHeight = wide ? NUMBER_ROW_HEIGHT : 1 / parts.length;
+	const wideHeight = wide ? (1 - rows.length * NUMBER_ROW_HEIGHT) / wide : 0;
+	let left = 1;
+	const elements = parts.map((p, i) => {
+		// rounded like the builder's own; the last takes what is left, so the column is exactly the screen
+		const height = i === parts.length - 1 ? Math.round(left * 1000) / 1000 : Math.round((p.thin ? thinHeight : wideHeight) * 1000) / 1000;
+		left -= height;
+		return p.make(height);
+	});
+	return { type: "dockingLayout", rootElement: { width: 1, height: 1, id: uuid(), type: "stackLayoutElement", orientation: "row", elements } };
+}
+
+/**
+ * Copies of dashboard elements under new ids. Every reference between them follows (a legend's mapWidgetId, a linked
+ * map, an action's "<widget id>#main" target): the ids are UUIDs, so replacing the text replaces exactly the id.
+ */
+export function copyWithIds<T>(elements: T, ids: Map<string, string>): T {
+	let text = JSON.stringify(elements);
+	for (const [from, to] of ids) text = text.split(from).join(to);
+	return JSON.parse(text);
+}
+
 /** Where a widget's data comes from: a feature layer item (target + layer), or a layer of the web map (layer). */
 type LayerRef = { target?: string; layer?: string | number };
 
@@ -962,13 +1028,43 @@ export async function createDashboard(ctx: Ctx, args: AppArgs) {
 			throw new ArcGISError(`links: '${lk.from}' and '${lk.to}' must each be a field of one of the dashboard's layers.`, "bad_argument");
 		}
 	}
-	const wired = args.interactive === false ? null : wireActions(widgets, mapWiring, args.extent_filter ?? true, meta, links);
 	const range = (i: number) => (stats[`MAX_${i}`] > stats[`MIN_${i}`] ? { min: stats[`MIN_${i}`], max: stats[`MAX_${i}`] } : undefined);
 	const selectors = selectorSpecs.map((sp, i) => ({ widget: selectorWidget(selectorLayers[i], sp, range(i)),
 		field: fieldOf(selectorLayers[i].info, sp.field, "selector"), layer: selectorLayers[i] }));
+	// The phone view has its own copies of the widgets and selectors, taken here, before anything is wired, and then
+	// wired among themselves by the same rules: a widget left out of it (mobile: false) is simply not a target there.
+	let phone: { widgets: any[]; selectors: any[]; entries: MobileEntry[]; ids: Map<string, string>; leftOut: string[]; wired: unknown } | null = null;
+	if (args.mobile) {
+		const mapOnPhone = Boolean(mapW && mainSpec?.mobile !== false);
+		// a legend and a linked map show the main map: without it on the phone they have nothing to show
+		const needsMap = (w: any) => w.type === "legendWidget" || (w.type === "mapWidget" && w !== mapW);
+		const kept = specs.map((s, i) => ({ s, w: widgets[i] })).filter(({ s, w }) => s.mobile !== false && (mapOnPhone || !needsMap(w)));
+		if (!kept.length) {
+			throw new ArcGISError("mobile=true needs at least one widget in the phone view: every widget has mobile: false.", "bad_argument");
+		}
+		const ids = new Map<string, string>([...kept.map(({ w }) => w.id), ...selectors.map((x) => x.widget.id)].map((id) => [id, uuid()]));
+		const copies: any[] = copyWithIds(kept.map(({ w }) => w), ids);
+		if (!mapOnPhone) for (const w of copies) delete w.mapWidgetId; // details: the map it would zoom is not there
+		const phoneMeta: WidgetMeta = new Map(kept.flatMap(({ w }) => (meta.has(w.id) ? [[ids.get(w.id)!, meta.get(w.id)!] as const] : [])));
+		const phoneMap: MapWiring | null = mapOnPhone && mapWiring ? { widget: copies[kept.findIndex(({ w }) => w === mapW)], layers: mapWiring.layers } : null;
+		const phoneWired = args.interactive === false ? null : wireActions(copies, phoneMap, args.extent_filter ?? true, phoneMeta, links);
+		const phoneSelectors: any[] = copyWithIds(selectors.map((x) => x.widget), ids);
+		wireSelectors(phoneSelectors.map((widget, i) => ({ widget, field: selectors[i].field, layer: selectors[i].layer })), copies, phoneMap,
+			phoneMeta, links);
+		phone = { widgets: copies, selectors: phoneSelectors, ids, wired: phoneWired ?? false,
+			entries: kept.map(({ s, w }, i) => ({ id: copies[i].id, type: s.type, main: w === mapW,
+				name: String(s.tab ?? s.title ?? w.name ?? s.type).trim().slice(0, 40) || s.type })),
+			leftOut: specs.flatMap((s, i) => (kept.some((k) => k.w === widgets[i]) ? [] : [String(widgets[i].name ?? s.type)])) };
+	}
+	const wired = args.interactive === false ? null : wireActions(widgets, mapWiring, args.extent_filter ?? true, meta, links);
 	const selected = wireSelectors(selectors, widgets, mapWiring, meta, links);
 	const at = args.selectors_at ?? (selectors.length > 2 ? "sidebar" : "header");
 	const sidebarTitle = args.sidebar_title ? `<p><strong><span style="font-size:16px;">${esc(args.sidebar_title)}</span></strong></p>` : "";
+	// what the desktop and the phone headers share; the desktop one also holds the header's selectors
+	const header = { dashboardItemType: "panel", type: "header", title, logoSize: "small", backgroundImageSizing: "fit-height",
+		normalBackgroundImagePlacement: "left", horizontalBackgroundImagePlacement: "top", showSignOutMenu: false,
+		...(look.exec ? { showMargin: true } : {}), ...(logo ? { logoImageURL: logo } : {}), ...(logoLink ? { logoURL: logoLink } : {}),
+		menuContents: menu };
 	const data = { version: "5.1.0", authoringApp: "ArcGIS Dashboards", authoringAppVersion: "5.1.0", maxPaginationRecords: 50000,
 		maxChartRecords: 10000, timeZone: "system",
 		theme: theme === "navy" ? { id: "user", type: "resource" } : { id: theme === "dark" ? "dark" : "light", type: "defined" },
@@ -978,15 +1074,18 @@ export async function createDashboard(ctx: Ctx, args: AppArgs) {
 		...(arcade.length ? { arcadeDataSourceItems: arcade } : {}),
 		desktopView: { type: "desktop", widgets, settings: { allowElementResizing: false, allowReset: false },
 			layout: layoutFor([{ ids: columns.left, width: 0.22 }, { ids: columns.center, width: 0.48 }, { ids: columns.right, width: 0.3 }]),
-			header: { dashboardItemType: "panel", type: "header", title, logoSize: "small", backgroundImageSizing: "fit-height",
-				normalBackgroundImagePlacement: "left", horizontalBackgroundImagePlacement: "top", showSignOutMenu: false,
-				selectors: at === "header" ? selectors.map((x) => x.widget) : [], ...(look.exec ? { showMargin: true } : {}),
-				...(args.subtitle ? { subtitle: args.subtitle, subtitlePlacement: "sameLine" } : {}), ...(logo ? { logoImageURL: logo } : {}),
-				...(logoLink ? { logoURL: logoLink } : {}), menuContents: menu },
+			header: { ...header, selectors: at === "header" ? selectors.map((x) => x.widget) : [],
+				...(args.subtitle ? { subtitle: args.subtitle, subtitlePlacement: "sameLine" } : {}) },
 			...(at === "sidebar" && selectors.length ? { sidebar: { selectors: selectors.map((x) => x.widget), type: "sidebar", title: sidebarTitle } } : {}) },
-		elementMappings: {} };
+		// on a phone the subtitle goes under the title, and the selectors open from a drawer whatever the desktop uses
+		...(phone ? { mobileView: { type: "mobile", widgets: phone.widgets, settings: { allowElementResizing: false, allowReset: false },
+			layout: mobileLayout(phone.entries),
+			header: { ...header, ...(args.subtitle ? { subtitle: args.subtitle, subtitlePlacement: "below" } : {}) },
+			...(phone.selectors.length ? { drawer: { dashboardItemType: "panel", type: "drawer", selectors: phone.selectors } } : {}) } } : {}),
+		elementMappings: phone ? Object.fromEntries(phone.ids) : {} };
 	const { id } = await addItem(ctx, args.folder, { type: "Dashboard", title, text: JSON.stringify(data),
-		typeKeywords: "ArcGIS Dashboards,Dashboard,Operations Dashboard", tags: (args.tags ?? ["arcgis-web-mcp", "Dashboard"]).join(","),
+		typeKeywords: phone ? "ArcGIS Dashboards,Dashboard,Mobile,Operations Dashboard" : "ArcGIS Dashboards,Dashboard,Operations Dashboard",
+		tags: (args.tags ?? ["arcgis-web-mcp", "Dashboard"]).join(","),
 		snippet: args.summary ?? `Dashboard of ${l.info.name ?? "a layer"}` });
 	return orRemove(ctx, [id], async () => {
 		if (theme === "navy") await addResource(ctx, id, "themes/user.json", JSON.stringify(NAVY_THEME));
@@ -997,6 +1096,9 @@ export async function createDashboard(ctx: Ctx, args: AppArgs) {
 				widgets: widgets.filter((w) => meta.get(w.id)?.layer && keyOf(meta.get(w.id)!.layer!) === keyOf(x)).length,
 				on_map: Boolean(mapWiring?.layers.some((m) => keyOf(m.layer) === keyOf(x))) })),
 			theme, style: look.exec ? "executive" : "classic", interactive: wired ?? false,
-			...(selected.length ? { selectors: { at, wired: selected } } : {}) };
+			...(selected.length ? { selectors: { at, wired: selected } } : {}),
+			...(phone ? { mobile: { widgets: phone.widgets.map((w) => w.name), left_out: phone.leftOut.length ? phone.leftOut : null,
+				layout: "one column: indicators and gauges on top, the map, the other widgets in tabs; selectors in a drawer",
+				shown: "on phones, in place of the desktop layout" } } : {}) };
 	});
 }
